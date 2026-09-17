@@ -458,7 +458,7 @@
       <div class="filter-group">
         <label>Empresa:</label>
         <select class="filter-select" id="filterEmpresa" onchange="renderPedidosTable()">
-          <option value="">Todas</option><option value="RLC">RLC</option><option value="JRV">JRV</option>
+          <option value="">Todas</option>
         </select>
       </div>
       <div class="filter-group">
@@ -517,8 +517,6 @@
         <label>Filtrar por Empresa:</label>
         <select class="filter-select" id="chartEmpresaFilter" onchange="renderCharts()">
           <option value="">Todas (Geral)</option>
-          <option value="RLC">Real Comércio (RLC)</option>
-          <option value="JRV">JR Rodrigues (JRV)</option>
         </select>
       </div>
     </div>
@@ -699,7 +697,7 @@
     <div class="modal-head"><h3 id="modalPedidoTitle">Novo pedido</h3><button class="modal-close" onclick="closeModal('modalPedido')">×</button></div>
     <div class="modal-body">
       <div class="form-grid">
-        <div><label>Número Order</label><input id="o_numero" placeholder="RLC26004 ou JRV26001" oninput="previewEmpresa()"><div class="company-hint" id="empresaPreview">Empresa: —</div></div>
+        <div><label>Número Order</label><input id="o_numero" placeholder="Digite o número do processo" oninput="previewEmpresa()"><div class="company-hint" id="empresaPreview">Empresa: —</div></div>
         <div><label>Agente de Carga</label><input id="o_agente"></div>
         <div><label>Data Ass. Contrato</label><input type="date" id="o_contrato"></div>
         <div><label>Data Pag. Sinal</label><input type="date" id="o_sinal"></div>
@@ -794,10 +792,28 @@ function uid(){ return 'id' + Date.now().toString(36) + Math.random().toString(3
 function fmtDate(d){ if(!d) return '—'; const [y,m,day]=d.split('-'); return day && m && y ? `${day}/${m}/${y}` : d; }
 function empresaFromNumero(numero){
   if(!numero) return '';
-  const p = numero.trim().toUpperCase().slice(0,3);
-  if(p==='RLC') return 'RLC';
-  if(p==='JRV') return 'JRV';
-  return '';
+  
+  const normalizedNumero = numero.trim().toUpperCase();
+  
+  // Encontrar todas as empresas cujo prefixo corresponde ao início do número
+  const matchingEmpresas = empresasCadastradas.filter(empresa => {
+    const prefixo = empresa.prefixo_numero?.toUpperCase();
+    if(!prefixo) return false;
+    return normalizedNumero.startsWith(prefixo);
+  });
+  
+  if(matchingEmpresas.length === 0){
+    return '';
+  }
+  
+  // Priorizar o prefixo mais longo para evitar conflitos (ex: AB vs ABC)
+  const empresaComPrefixoMaisLongo = matchingEmpresas.reduce((melhor, atual) => {
+    const tamanhoMelhor = melhor.prefixo_numero?.length || 0;
+    const tamanhoAtual = atual.prefixo_numero?.length || 0;
+    return tamanhoAtual > tamanhoMelhor ? atual : melhor;
+  });
+  
+  return empresaComPrefixoMaisLongo.codigo;
 }
 function empresaLabel(codigo){
   if(!codigo) return 'Não identificada';
@@ -905,6 +921,26 @@ async function loadEmpresas(){
   }
 }
 
+function populateFilterEmpresa(){
+  const filter = document.getElementById('filterEmpresa');
+  if(!filter) return;
+  
+  // Preservar valor atualmente selecionado
+  const currentValue = filter.value;
+  
+  // Gerar opções dinamicamente
+  const options = empresasCadastradas.map(empresa => 
+    `<option value="${empresa.codigo}">${empresaLabel(empresa.codigo)}</option>`
+  ).join('');
+  
+  filter.innerHTML = '<option value="">Todas</option>' + options;
+  
+  // Restaurar valor selecionado se ainda existir nas opções
+  if(currentValue && (currentValue === '' || empresasCadastradas.some(e => e.codigo === currentValue))){
+    filter.value = currentValue;
+  }
+}
+
 async function loadAll(){
   if(!sb){
     document.getElementById('connStatus').className = 'error';
@@ -937,6 +973,9 @@ async function loadAll(){
     
     // Carregar empresas cadastradas
     await loadEmpresas();
+    
+    // Preencher filtro de empresas dinamicamente
+    populateFilterEmpresa();
     
     renderAll();
     setConnStatus('ok', 'Conectado ao Supabase');
@@ -998,7 +1037,7 @@ document.querySelectorAll('.modal-overlay').forEach(ov=>{ ov.addEventListener('c
 function previewEmpresa(){
   const numero = document.getElementById('o_numero').value;
   const cod = empresaFromNumero(numero);
-  document.getElementById('empresaPreview').textContent = 'Empresa: ' + (cod ? empresaLabel(cod) : 'não identificada (use prefixo RLC ou JRV)');
+  document.getElementById('empresaPreview').textContent = 'Empresa: ' + (cod ? empresaLabel(cod) : 'não identificada (use um prefixo de empresa cadastrado)');
 }
 
 // ==================== PEDIDOS (CRUD via Supabase) ====================
@@ -1028,7 +1067,7 @@ async function savePedido(){
   const numero = document.getElementById('o_numero').value.trim().toUpperCase();
   if(!numero){ showNotification('Informe o número do pedido.', 'error'); return; }
   const cod = empresaFromNumero(numero);
-  if(!cod){ showNotification('O número do pedido precisa começar com RLC ou JRV.', 'error'); return; }
+  if(!cod){ showNotification('O número do processo deve começar com um prefixo de empresa cadastrado.', 'error'); return; }
   if(!editingPedidoId && pedidos.some(x=>x.numero===numero)){ showNotification('Já existe um pedido com esse número.', 'error'); return; }
 
   const data = {
@@ -1093,15 +1132,36 @@ async function deletePedido(){
 
 // ==================== RESUMO ====================
 function renderResumo(){
-  const rlc = pedidos.filter(p=>p.empresa==='RLC').length;
-  const jrv = pedidos.filter(p=>p.empresa==='JRV').length;
+  // Determinar quais empresas mostrar baseado em permissões
+  let empresasToShow = [];
+  
+  if(userPermissions === PERMISSIONS.ADMIN || (currentUser?.empresas === EMPRESAS.AMBAS)){
+    // Admin ou AMBAS vêem todas as empresas
+    empresasToShow = empresasCadastradas;
+  } else {
+    // Usuário com empresa específica vê apenas sua empresa
+    const userEmpresa = currentUser?.empresas;
+    if(userEmpresa){
+      const empresa = empresasCadastradas.find(e => e.codigo === userEmpresa);
+      if(empresa){
+        empresasToShow = [empresa];
+      }
+      // Se empresa não encontrada, empresasToShow fica vazio (fallback seguro)
+    }
+  }
+  
+  // Gerar cards de empresas dinamicamente
+  const empresaCards = empresasToShow.map(empresa => {
+    const count = pedidos.filter(p => p.empresa === empresa.codigo).length;
+    return `<div class="stat-card"><div class="label">${empresaLabel(empresa.codigo)}</div><div class="value">${count}</div><div class="sub">pedidos cadastrados</div></div>`;
+  }).join('');
+  
+  // Cards gerais (mantidos inalterados)
   const emViagem = pedidos.filter(p=>p.status==='EM VIAGEM' || p.status==='ATRACADO').length;
   const aguardando = pedidos.filter(p=>p.status==='AGUARDANDO PAG SINAL' || p.status==='AGUARDANDO BOOKING').length;
   const finalizados = pedidos.filter(p=>p.status==='FINALIZADO').length;
 
-  document.getElementById('statGrid').innerHTML = `
-    <div class="stat-card"><div class="label">Real Comércio (RLC)</div><div class="value">${rlc}</div><div class="sub">pedidos cadastrados</div></div>
-    <div class="stat-card"><div class="label">JR Rodrigues (JRV)</div><div class="value">${jrv}</div><div class="sub">pedidos cadastrados</div></div>
+  document.getElementById('statGrid').innerHTML = empresaCards + `
     <div class="stat-card"><div class="label">Em viagem / atracado</div><div class="value">${emViagem}</div></div>
     <div class="stat-card"><div class="label">Aguardando etapa inicial</div><div class="value">${aguardando}</div></div>
     <div class="stat-card"><div class="label">Finalizados</div><div class="value">${finalizados}</div></div>
@@ -2279,25 +2339,41 @@ function updateChartEmpresaFilter(){
   const filter = document.getElementById('chartEmpresaFilter');
   if(!filter) return;
   
+  // Preservar valor atualmente selecionado
+  const currentValue = filter.value;
+  
   const userEmpresas = currentUser?.empresas || EMPRESAS.AMBAS;
   
   // Admin ou usuários com acesso a ambas veem todas as opções
   if(userPermissions === PERMISSIONS.ADMIN || userEmpresas === EMPRESAS.AMBAS){
-    filter.innerHTML = `
-      <option value="">Todas (Geral)</option>
-      <option value="RLC">Real Comércio (RLC)</option>
-      <option value="JRV">JR Rodrigues (JRV)</option>
-    `;
-  } else if(userEmpresas === EMPRESAS.RLC){
-    filter.innerHTML = `
-      <option value="">Todas (RLC)</option>
-      <option value="RLC">Real Comércio (RLC)</option>
-    `;
-  } else if(userEmpresas === EMPRESAS.JRV){
-    filter.innerHTML = `
-      <option value="">Todas (JRV)</option>
-      <option value="JRV">JR Rodrigues (JRV)</option>
-    `;
+    const options = empresasCadastradas.map(empresa => 
+      `<option value="${empresa.codigo}">${empresaLabel(empresa.codigo)}</option>`
+    ).join('');
+    filter.innerHTML = '<option value="">Todas (Geral)</option>' + options;
+  } else {
+    // Usuário com empresa específica - buscar em empresasCadastradas
+    const empresaUsuario = empresasCadastradas.find(e => e.codigo === userEmpresas);
+    
+    if(empresaUsuario){
+      // Empresa encontrada - mostrar apenas essa empresa
+      const optionLabel = empresaLabel(empresaUsuario.codigo);
+      filter.innerHTML = `
+        <option value="">Todas (${empresaUsuario.codigo})</option>
+        <option value="${empresaUsuario.codigo}">${optionLabel}</option>
+      `;
+    } else {
+      // Empresa não encontrada em empresasCadastradas - comportamento seguro
+      // Mostrar apenas opção "Todas" sem opções específicas
+      filter.innerHTML = '<option value="">Todas</option>';
+    }
+  }
+  
+  // Restaurar valor selecionado se ainda existir nas opções reconstruídas
+  if(currentValue){
+    const optionExists = Array.from(filter.options).some(option => option.value === currentValue);
+    if(optionExists){
+      filter.value = currentValue;
+    }
   }
 }
 
