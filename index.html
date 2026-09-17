@@ -800,8 +800,18 @@ function empresaFromNumero(numero){
   return '';
 }
 function empresaLabel(codigo){
-  if(codigo==='RLC') return 'Real Comércio (RLC)';
-  if(codigo==='JRV') return 'JR Rodrigues (JRV)';
+  if(!codigo) return 'Não identificada';
+  
+  const empresa = empresasCadastradas.find(e => e.codigo.toLowerCase() === codigo.toLowerCase());
+  
+  if(empresa){
+    if(empresa.nome_fantasia){
+      return `${empresa.nome_fantasia} (${empresa.codigo})`;
+    } else if(empresa.razao_social){
+      return `${empresa.razao_social} (${empresa.codigo})`;
+    }
+  }
+  
   return 'Não identificada';
 }
 
@@ -890,7 +900,6 @@ async function loadEmpresas(){
     }
     
     empresasCadastradas = data || [];
-    console.log('Empresas carregadas do Supabase:', empresasCadastradas);
   }catch(e){
     console.error('Erro ao carregar empresas:', e);
   }
