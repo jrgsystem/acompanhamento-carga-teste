@@ -831,6 +831,12 @@ function empresaLabel(codigo){
   return 'Não identificada';
 }
 
+function empresaBadge(empresa){
+  const empresaData = empresasCadastradas.find(e => e.codigo === empresa);
+  const cor = empresaData?.cor_primaria || '#3d6b8c';
+  return `<span class="company-badge" style="background:${cor}">${empresa}</span>`;
+}
+
 // ==================== MAPEAMENTO DB <-> JS ====================
 function rowToPedido(row){
   return {
@@ -1178,7 +1184,7 @@ function renderResumo(){
     tbody.innerHTML = emAndamento.map(p=>`
       <tr>
         <td class="num">${p.numero}</td>
-        <td><span class="company-badge ${p.empresa.toLowerCase()}">${p.empresa}</span></td>
+        <td>${empresaBadge(p.empresa)}</td>
         <td><span class="stamp-badge ${STATUS_CLASS[p.status]||''}">${p.status}</span></td>
         <td>${p.agente||'—'}</td><td>${fmtDate(p.chegadaPrev)}</td>
       </tr>
@@ -1426,7 +1432,7 @@ function renderPedidosTable(){
   tbody.innerHTML = list.map(p=>`
     <tr class="animate-fade-in">
       <td class="num">${p.numero}</td>
-      <td><span class="company-badge ${p.empresa.toLowerCase()}">${p.empresa}</span></td>
+      <td>${empresaBadge(p.empresa)}</td>
       <td>${fmtDate(p.contrato)}</td><td>${fmtDate(p.sinal)}</td><td>${fmtDate(p.embarque)}</td>
       <td>${p.agente||'—'}</td><td class="num">${p.bl||'—'}</td><td>${fmtDate(p.chegadaPrev)}</td>
       <td>${fmtDate(p.atracacao)}</td><td>${p.porto||'—'}</td><td>${fmtDate(p.entrega)}</td>
