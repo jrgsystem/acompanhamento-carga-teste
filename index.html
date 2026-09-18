@@ -1564,7 +1564,6 @@ function renderCharts(){
   // Determinar quais empresas mostrar baseado no filtro e permissões
   let empresasComDados = [];
 
-  const fEmpresa = document.getElementById('chartEmpresaFilter').value;
   if(fEmpresa){
     // Filtro selecionado - mostrar apenas a empresa selecionada
     const empresaSelecionada = empresasCadastradas.find(e => e.codigo === fEmpresa);
