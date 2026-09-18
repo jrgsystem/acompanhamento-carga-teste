@@ -916,7 +916,6 @@ async function loadEmpresas(){
     }
     
     empresasCadastradas = data || [];
-    console.log('[DEBUG loadEmpresas] empresasCadastradas:', empresasCadastradas);
   }catch(e){
     console.error('Erro ao carregar empresas:', e);
   }
@@ -977,12 +976,6 @@ async function loadAll(){
     
     // Preencher filtro de empresas dinamicamente
     populateFilterEmpresa();
-    
-    console.log('[DEBUG loadAll antes chartFilter]', {
-      empresasCadastradas: empresasCadastradas.map(e => e.codigo),
-      userPermissions,
-      currentUserEmpresas: currentUser?.empresas
-    });
     
     // Atualizar filtro de empresas nos gráficos
     updateChartEmpresaFilter();
@@ -2381,13 +2374,6 @@ function updateChartEmpresaFilter(){
   const filter = document.getElementById('chartEmpresaFilter');
   if(!filter) return;
   
-  console.log('[DEBUG chartFilter] INÍCIO', {
-    empresasCadastradas: empresasCadastradas.map(e => e.codigo),
-    userPermissions,
-    currentUserEmpresas: currentUser?.empresas,
-    htmlAntes: filter.innerHTML
-  });
-  
   // Preservar valor atualmente selecionado
   const currentValue = filter.value;
   
@@ -2416,17 +2402,6 @@ function updateChartEmpresaFilter(){
       filter.innerHTML = '<option value="">Todas</option>';
     }
   }
-  
-  console.log('[DEBUG chartFilter] DEPOIS', {
-    empresasCadastradas: empresasCadastradas.map(e => e.codigo),
-    userPermissions,
-    currentUserEmpresas: currentUser?.empresas,
-    options: Array.from(filter.options).map(o => ({
-      value: o.value,
-      text: o.text
-    })),
-    htmlDepois: filter.innerHTML
-  });
   
   // Restaurar valor selecionado se ainda existir nas opções reconstruídas
   if(currentValue){
