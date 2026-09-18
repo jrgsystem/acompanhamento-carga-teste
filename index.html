@@ -916,6 +916,7 @@ async function loadEmpresas(){
     }
     
     empresasCadastradas = data || [];
+    console.log('[DEBUG loadEmpresas] empresasCadastradas:', empresasCadastradas);
   }catch(e){
     console.error('Erro ao carregar empresas:', e);
   }
@@ -976,6 +977,15 @@ async function loadAll(){
     
     // Preencher filtro de empresas dinamicamente
     populateFilterEmpresa();
+    
+    console.log('[DEBUG loadAll antes chartFilter]', {
+      empresasCadastradas: empresasCadastradas.map(e => e.codigo),
+      userPermissions,
+      currentUserEmpresas: currentUser?.empresas
+    });
+    
+    // Atualizar filtro de empresas nos gráficos
+    updateChartEmpresaFilter();
     
     renderAll();
     setConnStatus('ok', 'Conectado ao Supabase');
@@ -1551,17 +1561,50 @@ function renderCharts(){
   });
   
   // Gráfico de Empresa
-  const empresaData = { RLC: 0, JRV: 0 };
-  filteredPedidos.forEach(p => { if(empresaData[p.empresa] !== undefined) empresaData[p.empresa]++; });
-  
+  // Determinar quais empresas mostrar baseado no filtro e permissões
+  let empresasComDados = [];
+
+  const fEmpresa = document.getElementById('chartEmpresaFilter').value;
+  if(fEmpresa){
+    // Filtro selecionado - mostrar apenas a empresa selecionada
+    const empresaSelecionada = empresasCadastradas.find(e => e.codigo === fEmpresa);
+    if(empresaSelecionada){
+      empresasComDados = [empresaSelecionada];
+    }
+  } else {
+    // Sem filtro - depende de permissões
+    if(userPermissions === PERMISSIONS.ADMIN || (currentUser?.empresas === EMPRESAS.AMBAS)){
+      // Admin ou AMBAS veem todas as empresas
+      empresasComDados = empresasCadastradas;
+    } else {
+      // Usuário com empresa específica vê apenas sua empresa
+      const userEmpresa = currentUser?.empresas;
+      if(userEmpresa){
+        const empresa = empresasCadastradas.find(e => e.codigo === userEmpresa);
+        if(empresa){
+          empresasComDados = [empresa];
+        }
+      }
+    }
+  }
+
+  // Gerar arrays a partir da mesma lista de empresas
+  const labels = empresasComDados.map(empresa => empresaLabel(empresa.codigo));
+  const data = empresasComDados.map(empresa => 
+    filteredPedidos.filter(p => p.empresa === empresa.codigo).length
+  );
+  const backgroundColor = empresasComDados.map(empresa => 
+    empresa.cor_primaria || '#3d6b8c' // Fallback: cor azul info se cor_primaria vazia
+  );
+
   charts.empresa = new Chart(document.getElementById('empresaChart'), {
     type: 'bar',
     data: {
-      labels: ['Real Comércio (RLC)', 'JR Rodrigues (JRV)'],
+      labels: labels,
       datasets: [{
         label: 'Pedidos',
-        data: [empresaData.RLC, empresaData.JRV],
-        backgroundColor: ['#2c4a80', '#a8402c']
+        data: data,
+        backgroundColor: backgroundColor
       }]
     },
     options: {
@@ -2339,6 +2382,13 @@ function updateChartEmpresaFilter(){
   const filter = document.getElementById('chartEmpresaFilter');
   if(!filter) return;
   
+  console.log('[DEBUG chartFilter] INÍCIO', {
+    empresasCadastradas: empresasCadastradas.map(e => e.codigo),
+    userPermissions,
+    currentUserEmpresas: currentUser?.empresas,
+    htmlAntes: filter.innerHTML
+  });
+  
   // Preservar valor atualmente selecionado
   const currentValue = filter.value;
   
@@ -2367,6 +2417,17 @@ function updateChartEmpresaFilter(){
       filter.innerHTML = '<option value="">Todas</option>';
     }
   }
+  
+  console.log('[DEBUG chartFilter] DEPOIS', {
+    empresasCadastradas: empresasCadastradas.map(e => e.codigo),
+    userPermissions,
+    currentUserEmpresas: currentUser?.empresas,
+    options: Array.from(filter.options).map(o => ({
+      value: o.value,
+      text: o.text
+    })),
+    htmlDepois: filter.innerHTML
+  });
   
   // Restaurar valor selecionado se ainda existir nas opções reconstruídas
   if(currentValue){
