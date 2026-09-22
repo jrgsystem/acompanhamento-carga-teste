@@ -837,6 +837,31 @@ function empresaBadge(empresa){
   return `<span class="company-badge" style="background:${cor}">${empresa}</span>`;
 }
 
+async function loadUserEmpresas(userId){
+  const { data, error } = await sb
+    .from('user_empresas')
+    .select(`
+      empresa_id,
+      empresas (
+        id,
+        codigo,
+        nome_fantasia,
+        razao_social,
+        cor_primaria
+      )
+    `)
+    .eq('user_id', userId);
+
+  if(error){
+    console.error('Erro ao carregar empresas do usuário:', error);
+    return [];
+  }
+
+  return (data || [])
+    .map(row => row.empresas)
+    .filter(Boolean);
+}
+
 // ==================== MAPEAMENTO DB <-> JS ====================
 function rowToPedido(row){
   return {
@@ -2287,6 +2312,11 @@ async function handleLogin(event){
 
     currentUser = profile;
     userPermissions = profile.permission || PERMISSIONS.VIEWER;
+
+    // Carregar empresas do usuário a partir de user_empresas
+    const empresasUsuario = await loadUserEmpresas(profile.id);
+    currentUser.empresasPermitidas = empresasUsuario;
+
     showMainApp();
     showNotification('Login realizado com sucesso!', 'success');
   }catch(error){
@@ -2495,6 +2525,11 @@ async function checkSession(){
 
   currentUser = profile;
   userPermissions = profile.permission || PERMISSIONS.VIEWER;
+
+  // Carregar empresas do usuário a partir de user_empresas
+  const empresasUsuario = await loadUserEmpresas(profile.id);
+  currentUser.empresasPermitidas = empresasUsuario;
+
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainApp').style.display = 'block';
   updateUserDisplay();
