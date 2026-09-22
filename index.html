@@ -738,6 +738,7 @@ let currentChecklistPedido = null;
 let currentUser = null;
 let userPermissions = null;
 let empresasCadastradas = [];
+let fornecedoresCadastrados = [];
 
 // Inicializar Supabase client quando estiver pronto
 let supabaseReady = false;
@@ -952,6 +953,26 @@ async function loadEmpresas(){
   }
 }
 
+async function loadFornecedores(){
+  try{
+    const { data, error } = await sb
+      .from('fornecedores')
+      .select('id,codigo,razao_social,nome_fantasia,ativo')
+      .eq('ativo', true)
+      .order('nome_fantasia');
+
+    if(error){
+      console.error('Erro ao carregar fornecedores:', error);
+      return;
+    }
+
+    fornecedoresCadastrados = data || [];
+
+  }catch(e){
+    console.error('Erro ao carregar fornecedores:', e);
+  }
+}
+
 function populateFilterEmpresa(){
   const filter = document.getElementById('filterEmpresa');
   if(!filter) return;
@@ -1004,7 +1025,10 @@ async function loadAll(){
     
     // Carregar empresas cadastradas
     await loadEmpresas();
-    
+
+    // Carregar fornecedores cadastrados
+    await loadFornecedores();
+
     // Preencher filtro de empresas dinamicamente
     populateFilterEmpresa();
     
