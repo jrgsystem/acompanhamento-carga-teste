@@ -697,8 +697,26 @@
     <div class="modal-head"><h3 id="modalPedidoTitle">Novo pedido</h3><button class="modal-close" onclick="closeModal('modalPedido')">×</button></div>
     <div class="modal-body">
       <div class="form-grid">
-        <div><label>Número Order</label><input id="o_numero" placeholder="Digite o número do processo" oninput="previewEmpresa()"><div class="company-hint" id="empresaPreview">Empresa: —</div></div>
-        <div><label>Agente de Carga</label><input id="o_agente"></div>
+        <div>
+          <label>Empresa *</label>
+          <select id="o_empresa_id">
+            <option value="">Selecione a empresa...</option>
+          </select>
+        </div>
+        <div>
+          <label>Fornecedor *</label>
+          <select id="o_fornecedor_id">
+            <option value="">Selecione o fornecedor...</option>
+          </select>
+        </div>
+        <div>
+          <label>Número Order *</label>
+          <input id="o_numero" placeholder="Digite o número do processo">
+        </div>
+        <div>
+          <label>Agente de Carga</label>
+          <input id="o_agente">
+        </div>
         <div><label>Data Ass. Contrato</label><input type="date" id="o_contrato"></div>
         <div><label>Data Pag. Sinal</label><input type="date" id="o_sinal"></div>
         <div><label>Data Embarque</label><input type="date" id="o_embarque"></div>
@@ -869,6 +887,8 @@ function rowToPedido(row){
     id: row.id,
     numero: row.numero,
     empresa: row.empresa,
+    empresa_id: row.empresa_id,
+    fornecedor_id: row.fornecedor_id,
     agente: row.agente,
     contrato: row.contrato,
     sinal: row.sinal,
@@ -887,6 +907,8 @@ function pedidoToRow(p){
   return {
     numero: p.numero,
     empresa: p.empresa,
+    empresa_id: p.empresa_id,
+    fornecedor_id: p.fornecedor_id,
     agente: p.agente,
     contrato: p.contrato,
     sinal: p.sinal,
@@ -1095,15 +1117,42 @@ document.querySelectorAll('.modal-overlay').forEach(ov=>{ ov.addEventListener('c
 function previewEmpresa(){
   const numero = document.getElementById('o_numero').value;
   const cod = empresaFromNumero(numero);
-  document.getElementById('empresaPreview').textContent = 'Empresa: ' + (cod ? empresaLabel(cod) : 'não identificada (use um prefixo de empresa cadastrado)');
 }
 
 // ==================== PEDIDOS (CRUD via Supabase) ====================
+function populatePedidoSelects(){
+  const empresaSelect = document.getElementById('o_empresa_id');
+  const fornecedorSelect = document.getElementById('o_fornecedor_id');
+
+  if(empresaSelect){
+    empresaSelect.innerHTML =
+      '<option value="">Selecione a empresa...</option>' +
+      empresasCadastradas.map(e =>
+        `<option value="${e.id}">${empresaLabel(e.codigo)}</option>`
+      ).join('');
+  }
+
+  if(fornecedorSelect){
+    fornecedorSelect.innerHTML =
+      '<option value="">Selecione o fornecedor...</option>' +
+      fornecedoresCadastrados.map(f => {
+        const texto = f.nome_fantasia || f.razao_social || f.codigo;
+        return `<option value="${f.id}">${texto}</option>`;
+      }).join('');
+  }
+}
+
 function openPedidoModal(id){
   editingPedidoId = id || null;
   document.getElementById('modalPedidoTitle').textContent = id ? 'Editar pedido' : 'Novo pedido';
   document.getElementById('o_deleteBtn').style.display = id ? 'inline-block' : 'none';
   const p = id ? pedidos.find(x=>x.id===id) : {};
+
+  populatePedidoSelects();
+
+  document.getElementById('o_empresa_id').value = p.empresa_id || '';
+  document.getElementById('o_fornecedor_id').value = p.fornecedor_id || '';
+
   document.getElementById('o_numero').value = p.numero || '';
   document.getElementById('o_numero').disabled = !!id;
   document.getElementById('o_agente').value = p.agente || '';
@@ -1117,20 +1166,35 @@ function openPedidoModal(id){
   document.getElementById('o_entrega').value = p.entrega || '';
   document.getElementById('o_status').value = p.status || 'AGUARDANDO PAG SINAL';
   document.getElementById('o_obs').value = p.obs || '';
-  previewEmpresa();
   openModal('modalPedido');
 }
 
 async function savePedido(){
   const numero = document.getElementById('o_numero').value.trim().toUpperCase();
   if(!numero){ showNotification('Informe o número do pedido.', 'error'); return; }
-  const cod = empresaFromNumero(numero);
-  if(!cod){ showNotification('O número do processo deve começar com um prefixo de empresa cadastrado.', 'error'); return; }
+
+  const empresaId = document.getElementById('o_empresa_id').value;
+  const fornecedorId = document.getElementById('o_fornecedor_id').value;
+
+  if(!empresaId){ showNotification('Selecione a empresa.', 'error'); return; }
+  if(!fornecedorId){ showNotification('Selecione o fornecedor.', 'error'); return; }
+
+  const empresaSelecionada = empresasCadastradas.find(e => e.id === empresaId);
+  if(!empresaSelecionada){ showNotification('Empresa selecionada não encontrada.', 'error'); return; }
+
+  const cod = empresaSelecionada.codigo;
+
   if(!editingPedidoId && pedidos.some(x=>x.numero===numero)){ showNotification('Já existe um pedido com esse número.', 'error'); return; }
+
+  const anterior = editingPedidoId
+    ? pedidos.find(x => x.id === editingPedidoId)
+    : null;
 
   const data = {
     numero: numero,
     empresa: cod,
+    empresa_id: empresaId,
+    fornecedor_id: fornecedorId,
     agente: document.getElementById('o_agente').value.trim(),
     contrato: document.getElementById('o_contrato').value || null,
     sinal: document.getElementById('o_sinal').value || null,
@@ -1149,7 +1213,6 @@ async function savePedido(){
   saveBtn.disabled = true; saveBtn.textContent = 'Salvando...';
   try{
     if(editingPedidoId){
-      const anterior = pedidos.find(x=>x.id===editingPedidoId);
       const { error } = await sb.from('pedidos').update(pedidoToRow(data)).eq('id', editingPedidoId);
       if(error) throw error;
       if(anterior.status !== data.status){
