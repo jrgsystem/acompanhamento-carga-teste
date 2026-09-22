@@ -440,7 +440,7 @@
       <h3>📦 Pedidos em andamento</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Nº Pedido</th><th>Empresa</th><th>Status</th><th>Agente</th><th>Chegada prevista</th></tr></thead>
+          <thead><tr><th>Nº Pedido</th><th>Empresa</th><th>Fornecedor</th><th>Status</th><th>Agente</th><th>Chegada prevista</th></tr></thead>
           <tbody id="resumoTableBody"></tbody>
         </table>
       </div>
@@ -503,7 +503,7 @@
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Nº Pedido</th><th>Empresa</th><th>Contrato</th><th>Pag. Sinal</th><th>Embarque</th><th>Agente</th><th>BL/Booking</th><th>Chegada Prev.</th><th>Atracação</th><th>Porto</th><th>Entrega</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Nº Pedido</th><th>Empresa</th><th>Fornecedor</th><th>Contrato</th><th>Pag. Sinal</th><th>Embarque</th><th>Agente</th><th>BL/Booking</th><th>Chegada Prev.</th><th>Atracação</th><th>Porto</th><th>Entrega</th><th>Status</th><th></th></tr></thead>
         <tbody id="pedidosTableBody"></tbody>
       </table>
     </div>
@@ -848,6 +848,24 @@ function empresaLabel(codigo){
   }
   
   return 'Não identificada';
+}
+
+function fornecedorLabel(fornecedorId){
+  if(!fornecedorId) return '—';
+
+  const fornecedor = fornecedoresCadastrados.find(f => f.id === fornecedorId);
+
+  if(fornecedor){
+    if(fornecedor.nome_fantasia){
+      return fornecedor.nome_fantasia;
+    } else if(fornecedor.razao_social){
+      return fornecedor.razao_social;
+    } else {
+      return fornecedor.codigo;
+    }
+  }
+
+  return '—';
 }
 
 function empresaBadge(empresa){
@@ -1291,12 +1309,13 @@ function renderResumo(){
   const emAndamento = pedidos.filter(p=>p.status!=='FINALIZADO' && p.status!=='CANCELADO');
   const tbody = document.getElementById('resumoTableBody');
   if(emAndamento.length===0){
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="5">Nenhum pedido em andamento.</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Nenhum pedido em andamento.</td></tr>`;
   } else {
     tbody.innerHTML = emAndamento.map(p=>`
       <tr>
         <td class="num">${p.numero}</td>
         <td>${empresaBadge(p.empresa)}</td>
+        <td>${fornecedorLabel(p.fornecedor_id)}</td>
         <td><span class="stamp-badge ${STATUS_CLASS[p.status]||''}">${p.status}</span></td>
         <td>${p.agente||'—'}</td><td>${fmtDate(p.chegadaPrev)}</td>
       </tr>
@@ -1538,13 +1557,14 @@ function renderPedidosTable(){
   list = applyAdvancedFilters(list);
 
   if(list.length===0){
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="13">Nenhum pedido encontrado com os filtros atuais.</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="14">Nenhum pedido encontrado com os filtros atuais.</td></tr>`;
     return;
   }
   tbody.innerHTML = list.map(p=>`
     <tr class="animate-fade-in">
       <td class="num">${p.numero}</td>
       <td>${empresaBadge(p.empresa)}</td>
+      <td>${fornecedorLabel(p.fornecedor_id)}</td>
       <td>${fmtDate(p.contrato)}</td><td>${fmtDate(p.sinal)}</td><td>${fmtDate(p.embarque)}</td>
       <td>${p.agente||'—'}</td><td class="num">${p.bl||'—'}</td><td>${fmtDate(p.chegadaPrev)}</td>
       <td>${fmtDate(p.atracacao)}</td><td>${p.porto||'—'}</td><td>${fmtDate(p.entrega)}</td>
