@@ -1132,11 +1132,6 @@ function closeModal(id){ document.getElementById(id).classList.remove('open'); }
 function openModal(id){ document.getElementById(id).classList.add('open'); }
 document.querySelectorAll('.modal-overlay').forEach(ov=>{ ov.addEventListener('click', (e)=>{ if(e.target === ov) ov.classList.remove('open'); }); });
 
-function previewEmpresa(){
-  const numero = document.getElementById('o_numero').value;
-  const cod = empresaFromNumero(numero);
-}
-
 // ==================== PEDIDOS (CRUD via Supabase) ====================
 function populatePedidoSelects(){
   const empresaSelect = document.getElementById('o_empresa_id');
