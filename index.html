@@ -742,6 +742,33 @@
   </div>
 </div>
 
+<!-- ===================== MODAL: NOVO FORNECEDOR ===================== -->
+<div class="modal-overlay" id="modalFornecedor">
+  <div class="modal">
+    <div class="modal-head"><h3>Novo fornecedor</h3><button class="modal-close" onclick="closeModal('modalFornecedor')">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div>
+          <label>Código *</label>
+          <input id="f_codigo" placeholder="Ex.: SKYWAY" maxlength="30">
+        </div>
+        <div>
+          <label>Nome fantasia *</label>
+          <input id="f_nome_fantasia" placeholder="Ex.: Skyway" maxlength="120">
+        </div>
+        <div class="full">
+          <label>Razão social</label>
+          <input id="f_razao_social" placeholder="Opcional" maxlength="180">
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeModal('modalFornecedor')">Cancelar</button>
+      <button class="btn" id="f_saveBtn" onclick="saveFornecedor()">Salvar fornecedor</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ==================== ESTADO ====================
 let pedidos = [];
@@ -1131,6 +1158,7 @@ document.getElementById('nav').addEventListener('click', (e)=>{
 function closeModal(id){ document.getElementById(id).classList.remove('open'); }
 function openModal(id){ document.getElementById(id).classList.add('open'); }
 document.querySelectorAll('.modal-overlay').forEach(ov=>{ ov.addEventListener('click', (e)=>{ if(e.target === ov) ov.classList.remove('open'); }); });
+document.getElementById('o_fornecedor_id')?.addEventListener('change', handleFornecedorSelectChange);
 
 // ==================== PEDIDOS (CRUD via Supabase) ====================
 function populatePedidoSelects(){
@@ -1151,7 +1179,85 @@ function populatePedidoSelects(){
       fornecedoresCadastrados.map(f => {
         const texto = f.nome_fantasia || f.razao_social || f.codigo;
         return `<option value="${f.id}">${texto}</option>`;
-      }).join('');
+      }).join('') +
+      (userPermissions === PERMISSIONS.ADMIN
+        ? '<option value="__NOVO_FORNECEDOR__">+ Cadastrar novo fornecedor...</option>'
+        : '');
+  }
+}
+
+function handleFornecedorSelectChange(){
+  const fornecedorSelect = document.getElementById('o_fornecedor_id');
+  if(!fornecedorSelect || fornecedorSelect.value !== '__NOVO_FORNECEDOR__') return;
+
+  fornecedorSelect.value = '';
+  openFornecedorModal();
+}
+
+function openFornecedorModal(){
+  if(userPermissions !== PERMISSIONS.ADMIN){
+    showNotification('Apenas administradores podem cadastrar fornecedores.', 'error');
+    return;
+  }
+
+  document.getElementById('f_codigo').value = '';
+  document.getElementById('f_nome_fantasia').value = '';
+  document.getElementById('f_razao_social').value = '';
+  openModal('modalFornecedor');
+  setTimeout(() => document.getElementById('f_codigo')?.focus(), 0);
+}
+
+async function saveFornecedor(){
+  if(userPermissions !== PERMISSIONS.ADMIN){
+    showNotification('Apenas administradores podem cadastrar fornecedores.', 'error');
+    return;
+  }
+
+  const codigo = document.getElementById('f_codigo').value.trim().toUpperCase();
+  const nomeFantasia = document.getElementById('f_nome_fantasia').value.trim();
+  const razaoSocial = document.getElementById('f_razao_social').value.trim();
+
+  if(!codigo){ showNotification('Informe o código do fornecedor.', 'error'); return; }
+  if(!nomeFantasia){ showNotification('Informe o nome fantasia do fornecedor.', 'error'); return; }
+
+  const duplicadoLocal = fornecedoresCadastrados.some(f =>
+    String(f.codigo || '').trim().toUpperCase() === codigo ||
+    String(f.nome_fantasia || '').trim().toLowerCase() === nomeFantasia.toLowerCase()
+  );
+  if(duplicadoLocal){
+    showNotification('Já existe um fornecedor com esse código ou nome fantasia.', 'error');
+    return;
+  }
+
+  const saveBtn = document.getElementById('f_saveBtn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Salvando...';
+
+  try{
+    const { data, error } = await sb
+      .from('fornecedores')
+      .insert([{
+        codigo: codigo,
+        nome_fantasia: nomeFantasia,
+        razao_social: razaoSocial || null,
+        ativo: true
+      }])
+      .select('id,codigo,razao_social,nome_fantasia,ativo')
+      .single();
+
+    if(error) throw error;
+
+    await loadFornecedores();
+    populatePedidoSelects();
+    document.getElementById('o_fornecedor_id').value = data.id;
+    closeModal('modalFornecedor');
+    showNotification(`Fornecedor ${nomeFantasia} cadastrado com sucesso!`, 'success');
+  }catch(e){
+    console.error('Erro ao cadastrar fornecedor:', e);
+    showNotification('Erro ao cadastrar fornecedor: ' + (e.message || e), 'error');
+  }finally{
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Salvar fornecedor';
   }
 }
 
