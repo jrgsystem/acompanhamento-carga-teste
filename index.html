@@ -4,12 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Acompanhamento de Carga — RLC & JRV</title>
+<script>window.__appPerfStart = performance.now();</script>
 <script type="module">
   import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
   window.supabaseClient = createClient(
     'https://xjejtjixmxjefktapgfe.supabase.co',
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhqZWp0aml4bXhqZWZrdGFwZ2ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc2OTc0ODcsImV4cCI6MjEwMzI3MzQ4N30.W_Eab_px6sy0TG3toQdTAyqDb6iMxuaTSFaet-YTEPQ'
   );
+  console.log(`[PERF] Supabase JS + cliente prontos: ${(performance.now() - window.__appPerfStart).toFixed(1)} ms`);
   window.dispatchEvent(new Event('supabase-ready'));
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -929,6 +931,7 @@ function empresaBadge(empresa){
 }
 
 async function loadUserEmpresas(userId){
+  const perfT0 = performance.now();
   const { data, error } = await sb
     .from('user_empresas')
     .select(`
@@ -945,12 +948,15 @@ async function loadUserEmpresas(userId){
 
   if(error){
     console.error('Erro ao carregar empresas do usuário:', error);
+    console.log(`[PERF] user_empresas (erro): ${(performance.now() - perfT0).toFixed(1)} ms`);
     return [];
   }
 
-  return (data || [])
+  const resultado = (data || [])
     .map(row => row.empresas)
     .filter(Boolean);
+  console.log(`[PERF] user_empresas: ${(performance.now() - perfT0).toFixed(1)} ms`);
+  return resultado;
 }
 
 // ==================== MAPEAMENTO DB <-> JS ====================
@@ -997,6 +1003,10 @@ function pedidoToRow(p){
 }
 
 // ==================== CONEXÃO / CARGA DE DADOS ====================
+function perfStart(){ return performance.now(); }
+function perfLog(label, startedAt){
+  console.log(`[PERF] ${label}: ${(performance.now() - startedAt).toFixed(1)} ms`);
+}
 function setConnStatus(state, msg){
   const el = document.getElementById('connStatus');
   el.className = state;
@@ -1029,6 +1039,7 @@ function filterPedidosByUserAccess(allPedidos){
 }
 
 async function loadEmpresas(){
+  const perfT0 = perfStart();
   try{
     const { data, error } = await sb
       .from('empresas')
@@ -1044,10 +1055,13 @@ async function loadEmpresas(){
     empresasCadastradas = data || [];
   }catch(e){
     console.error('Erro ao carregar empresas:', e);
+  }finally{
+    perfLog('empresas', perfT0);
   }
 }
 
 async function loadFornecedores(){
+  const perfT0 = perfStart();
   try{
     const { data, error } = await sb
       .from('fornecedores')
@@ -1064,6 +1078,8 @@ async function loadFornecedores(){
 
   }catch(e){
     console.error('Erro ao carregar fornecedores:', e);
+  }finally{
+    perfLog('fornecedores', perfT0);
   }
 }
 
@@ -1088,6 +1104,7 @@ function populateFilterEmpresa(){
 }
 
 async function loadAll(){
+  const perfLoadAll = perfStart();
   if(!sb){
     document.getElementById('connStatus').className = 'error';
     document.getElementById('connStatus').textContent = 'Erro: Supabase client não inicializado';
@@ -1095,7 +1112,9 @@ async function loadAll(){
   }
   
   try{
+    const perfPedidos = perfStart();
     const { data, error } = await sb.from('pedidos').select('*');
+    perfLog('pedidos', perfPedidos);
     
     if(error){
       document.getElementById('connStatus').className = 'error';
@@ -1129,8 +1148,11 @@ async function loadAll(){
     // Atualizar filtro de empresas nos gráficos
     updateChartEmpresaFilter();
     
+    const perfRender = perfStart();
     renderAll();
+    perfLog('renderização', perfRender);
     setConnStatus('ok', 'Conectado ao Supabase');
+    perfLog('loadAll total', perfLoadAll);
   }catch(e){
     console.error(e);
     setConnStatus('err', 'Erro ao conectar ao banco de dados: ' + (e.message||e));
@@ -2592,16 +2614,19 @@ function switchLoginTab(tab){
 }
 
 async function handleLogin(event){
+  const perfLoginTotal = performance.now();
   event.preventDefault();
   const email = document.getElementById('loginUsername').value;
   const password = document.getElementById('loginPassword').value;
 
   try{
     // Autenticar com Supabase Auth
+    const perfAuth = performance.now();
     const { data, error } = await sb.auth.signInWithPassword({
       email,
       password
     });
+    console.log(`[PERF] signInWithPassword: ${(performance.now() - perfAuth).toFixed(1)} ms`);
 
     if(error || !data.user){
       showLoginError('Usuário ou senha incorretos');
@@ -2609,11 +2634,13 @@ async function handleLogin(event){
     }
 
     // Buscar perfil na tabela user_profiles
+    const perfProfile = performance.now();
     const { data: profile, error: profileError } = await sb
       .from('user_profiles')
       .select('*')
       .eq('id', data.user.id)
       .single();
+    console.log(`[PERF] user_profiles (login): ${(performance.now() - perfProfile).toFixed(1)} ms`);
 
     if(profileError || !profile){
       await sb.auth.signOut();
@@ -2636,6 +2663,7 @@ async function handleLogin(event){
 
     showMainApp();
     showNotification('Login realizado com sucesso!', 'success');
+    console.log(`[PERF] handleLogin até liberar interface: ${(performance.now() - perfLoginTotal).toFixed(1)} ms`);
   }catch(error){
     showLoginError('Erro ao fazer login: ' + error.message);
   }
@@ -2802,10 +2830,13 @@ function saveSession(){
 let sessionChecked = false;
 async function checkSession(){
   if(sessionChecked) return; // Evitar múltiplas verificações
+  const perfSessionTotal = performance.now();
   sessionChecked = true;
 
   // Verificar sessão do Supabase Auth
+  const perfGetSession = performance.now();
   const { data: { session }, error: sessionError } = await sb.auth.getSession();
+  console.log(`[PERF] getSession: ${(performance.now() - perfGetSession).toFixed(1)} ms`);
 
   if(!session || !session.user){
     currentUser = null;
@@ -2816,11 +2847,13 @@ async function checkSession(){
   }
 
   // Buscar perfil na tabela user_profiles
+  const perfSessionProfile = performance.now();
   const { data: profile, error: profileError } = await sb
     .from('user_profiles')
     .select('*')
     .eq('id', session.user.id)
     .single();
+  console.log(`[PERF] user_profiles (sessão): ${(performance.now() - perfSessionProfile).toFixed(1)} ms`);
 
   if(profileError || !profile){
     await sb.auth.signOut();
@@ -2850,6 +2883,7 @@ async function checkSession(){
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainApp').style.display = 'block';
   updateUserDisplay();
+  console.log(`[PERF] checkSession total: ${(performance.now() - perfSessionTotal).toFixed(1)} ms`);
 }
 
 // Atualizar handleLogin para salvar sessão e resetar navegação
