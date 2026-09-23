@@ -808,6 +808,8 @@ let sb = null;
 let charts = {};
 let notificationTimeout = null;
 let checklistData = {};
+let loadedChecklistPedidos = new Set();
+const DOCUMENTOS_BUCKET = 'documentos-pedidos';
 let currentChecklistPedido = null;
 let currentUser = null;
 let userPermissions = null;
@@ -997,8 +999,7 @@ function pedidoToRow(p){
     porto: p.porto,
     entrega: p.entrega,
     status: p.status,
-    obs: p.obs,
-    checklist: checklistData[p.id] ? JSON.stringify(checklistData[p.id]) : null
+    obs: p.obs
   };
 }
 
@@ -1113,7 +1114,7 @@ async function loadAll(){
   
   try{
     const perfPedidos = perfStart();
-    const { data, error } = await sb.from('pedidos').select('*');
+    const { data, error } = await sb.from('pedidos').select('id,numero,empresa,empresa_id,fornecedor_id,agente,contrato,sinal,embarque,bl,chegada_prev,atracacao,porto,entrega,status,obs');
     perfLog('pedidos', perfPedidos);
     
     if(error){
@@ -1124,17 +1125,6 @@ async function loadAll(){
     
   const allPedidos = (data||[]).map(rowToPedido);
   pedidos = filterPedidosByUserAccess(allPedidos);
-    
-    // Carregar checklists salvos
-    pedidos.forEach(p => {
-      if(p.checklist){
-        try{
-          checklistData[p.id] = JSON.parse(p.checklist);
-        }catch(e){
-          console.error('Erro ao carregar checklist:', e);
-        }
-      }
-    });
     
     // Carregar empresas cadastradas
     await loadEmpresas();
@@ -1455,8 +1445,7 @@ async function savePedido(){
     porto: document.getElementById('o_porto').value,
     entrega: document.getElementById('o_entrega').value || null,
     status: document.getElementById('o_status').value,
-    obs: document.getElementById('o_obs').value,
-    checklist: checklistData[editingPedidoId] ? JSON.stringify(checklistData[editingPedidoId]) : null
+    obs: document.getElementById('o_obs').value
   };
 
   const saveBtn = document.getElementById('o_saveBtn');
@@ -2113,7 +2102,7 @@ function refreshChecklistPedidoSelect(){
   if(current && pedidos.some(p=>p.id===current)) sel.value = current;
 }
 
-function loadChecklistForPedido(){
+async function loadChecklistForPedido(){
   const pedidoId = document.getElementById('checklistPedidoSelect').value;
   
   if(!pedidoId){
@@ -2128,8 +2117,33 @@ function loadChecklistForPedido(){
   document.getElementById('checklistContainer').style.display = 'grid';
   document.getElementById('noPedidoSelected').style.display = 'none';
   document.getElementById('checklistExportButtons').style.display = 'flex';
+
+  // O checklist (e seus documentos legados) só é baixado quando o pedido é aberto.
+  if(!loadedChecklistPedidos.has(pedidoId)){
+    const perfChecklist = perfStart();
+    try{
+      const { data, error } = await sb
+        .from('pedidos')
+        .select('checklist')
+        .eq('id', pedidoId)
+        .single();
+      if(error) throw error;
+
+      if(data?.checklist){
+        checklistData[pedidoId] = typeof data.checklist === 'string'
+          ? JSON.parse(data.checklist)
+          : data.checklist;
+      }
+      loadedChecklistPedidos.add(pedidoId);
+      perfLog(`checklist ${pedidoId}`, perfChecklist);
+    }catch(e){
+      console.error('Erro ao carregar checklist:', e);
+      showNotification('Erro ao carregar checklist: ' + (e.message || e), 'error');
+      return;
+    }
+  }
   
-  // Inicializar checklist para o pedido se não existir
+  // Inicializar checklist para o pedido se ainda não existir.
   if(!checklistData[pedidoId]){
     checklistData[pedidoId] = {
       comercial: defaultChecklistItems.comercial.map(name => ({ id: uid(), name, completed: false, files: [] })),
@@ -2142,7 +2156,6 @@ function loadChecklistForPedido(){
   renderAllCategories();
   showNotification('Checklist carregado', 'success');
 }
-
 function renderAllCategories(){
   renderCategory('comercial');
   renderCategory('fiscal');
@@ -2234,58 +2247,110 @@ function removeChecklistItem(category, itemId){
   }
 }
 
-function addChecklistFile(event, category, itemId){
+async function addChecklistFile(event, category, itemId){
   const file = event.target.files[0];
-  if(!file) return;
-  
-  const reader = new FileReader();
-  reader.onload = function(e){
-    const items = checklistData[currentChecklistPedido][category];
-    const item = items.find(i => i.id === itemId);
-    if(item){
-      if(!item.files) item.files = [];
-      item.files.push({
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        data: e.target.result // Base64
-      });
-      renderCategory(category);
-      saveChecklistToSupabase();
-      showNotification(`Arquivo "${file.name}" adicionado`, 'success');
-    }
-  };
-  reader.readAsDataURL(file);
-  
   event.target.value = '';
-}
+  if(!file || !currentChecklistPedido) return;
 
-function removeChecklistFile(category, itemId, fileIndex){
-  if(confirm('Remover este arquivo?')){
-    const items = checklistData[currentChecklistPedido][category];
-    const item = items.find(i => i.id === itemId);
-    if(item && item.files){
-      item.files.splice(fileIndex, 1);
-      renderCategory(category);
-      saveChecklistToSupabase();
-      showNotification('Arquivo removido', 'info');
+  const pedido = pedidos.find(p => p.id === currentChecklistPedido);
+  const items = checklistData[currentChecklistPedido]?.[category];
+  const item = items?.find(i => i.id === itemId);
+  if(!pedido || !item) return;
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2,8)}_${safeName}`;
+  const storagePath = `${pedido.id}/${category}/${itemId}/${uniqueName}`;
+
+  showNotification(`Enviando "${file.name}"...`, 'info');
+  try{
+    const { error: uploadError } = await sb.storage
+      .from(DOCUMENTOS_BUCKET)
+      .upload(storagePath, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+    if(uploadError) throw uploadError;
+
+    if(!item.files) item.files = [];
+    item.files.push({
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      storage_path: storagePath
+    });
+
+    try{
+      await saveChecklistToSupabase(true);
+    }catch(saveError){
+      // Evita arquivo órfão caso a gravação dos metadados falhe.
+      await sb.storage.from(DOCUMENTOS_BUCKET).remove([storagePath]);
+      item.files.pop();
+      throw saveError;
     }
+
+    renderCategory(category);
+    showNotification(`Arquivo "${file.name}" salvo no Storage`, 'success');
+  }catch(e){
+    console.error('Erro ao enviar arquivo:', e);
+    showNotification('Erro ao enviar arquivo: ' + (e.message || e), 'error');
   }
 }
 
-function downloadChecklistFile(category, itemId, fileIndex){
-  const items = checklistData[currentChecklistPedido][category];
-  const item = items.find(i => i.id === itemId);
-  if(item && item.files && item.files[fileIndex]){
-    const file = item.files[fileIndex];
-    const link = document.createElement('a');
-    link.href = file.data;
-    link.download = file.name;
-    link.click();
+async function removeChecklistFile(category, itemId, fileIndex){
+  if(!confirm('Remover este arquivo?')) return;
+
+  const items = checklistData[currentChecklistPedido]?.[category];
+  const item = items?.find(i => i.id === itemId);
+  const file = item?.files?.[fileIndex];
+  if(!file) return;
+
+  try{
+    // Arquivos novos ficam no Storage. Arquivos antigos em Base64 continuam compatíveis.
+    if(file.storage_path){
+      const { error } = await sb.storage.from(DOCUMENTOS_BUCKET).remove([file.storage_path]);
+      if(error) throw error;
+    }
+
+    item.files.splice(fileIndex, 1);
+    await saveChecklistToSupabase(true);
+    renderCategory(category);
+    showNotification('Arquivo removido', 'info');
+  }catch(e){
+    console.error('Erro ao remover arquivo:', e);
+    showNotification('Erro ao remover arquivo: ' + (e.message || e), 'error');
+  }
+}
+
+async function downloadChecklistFile(category, itemId, fileIndex){
+  const items = checklistData[currentChecklistPedido]?.[category];
+  const item = items?.find(i => i.id === itemId);
+  const file = item?.files?.[fileIndex];
+  if(!file) return;
+
+  try{
+    if(file.storage_path){
+      const { data, error } = await sb.storage.from(DOCUMENTOS_BUCKET).download(file.storage_path);
+      if(error) throw error;
+      const url = URL.createObjectURL(data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.name || 'documento';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } else if(file.data){
+      // Compatibilidade com documentos antigos armazenados em Base64 no checklist.
+      const link = document.createElement('a');
+      link.href = file.data;
+      link.download = file.name || 'documento';
+      link.click();
+    } else {
+      throw new Error('Arquivo sem referência de armazenamento');
+    }
     showNotification('Download iniciado', 'success');
+  }catch(e){
+    console.error('Erro ao baixar arquivo:', e);
+    showNotification('Erro ao baixar arquivo: ' + (e.message || e), 'error');
   }
 }
-
 
 function updateProgress(category){
   const items = checklistData[currentChecklistPedido]?.[category] || [];
@@ -2312,7 +2377,7 @@ function getChecklistSummary(){
 }
 
 // ==================== PERSISTÊNCIA DO CHECKLIST ====================
-async function saveChecklistToSupabase(){
+async function saveChecklistToSupabase(throwOnError = false){
   if(!currentChecklistPedido || !checklistData[currentChecklistPedido]) return;
   
   try{
@@ -2325,6 +2390,7 @@ async function saveChecklistToSupabase(){
   }catch(e){
     console.error('Erro ao salvar checklist:', e);
     showNotification('Erro ao salvar checklist no banco de dados', 'error');
+    if(throwOnError) throw e;
   }
 }
 
