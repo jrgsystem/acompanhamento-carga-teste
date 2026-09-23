@@ -742,6 +742,33 @@
   </div>
 </div>
 
+<!-- ===================== MODAL: NOVA EMPRESA ===================== -->
+<div class="modal-overlay" id="modalEmpresa">
+  <div class="modal">
+    <div class="modal-head"><h3>Nova empresa</h3><button class="modal-close" onclick="closeModal('modalEmpresa')">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div>
+          <label>Código *</label>
+          <input id="e_codigo" placeholder="Ex.: ABC" maxlength="30">
+        </div>
+        <div>
+          <label>Nome fantasia *</label>
+          <input id="e_nome_fantasia" placeholder="Ex.: Empresa ABC" maxlength="120">
+        </div>
+        <div class="full">
+          <label>Razão social</label>
+          <input id="e_razao_social" placeholder="Opcional" maxlength="180">
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeModal('modalEmpresa')">Cancelar</button>
+      <button class="btn" id="e_saveBtn" onclick="saveEmpresa()">Salvar empresa</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== MODAL: NOVO FORNECEDOR ===================== -->
 <div class="modal-overlay" id="modalFornecedor">
   <div class="modal">
@@ -1158,6 +1185,7 @@ document.getElementById('nav').addEventListener('click', (e)=>{
 function closeModal(id){ document.getElementById(id).classList.remove('open'); }
 function openModal(id){ document.getElementById(id).classList.add('open'); }
 document.querySelectorAll('.modal-overlay').forEach(ov=>{ ov.addEventListener('click', (e)=>{ if(e.target === ov) ov.classList.remove('open'); }); });
+document.getElementById('o_empresa_id')?.addEventListener('change', handleEmpresaSelectChange);
 document.getElementById('o_fornecedor_id')?.addEventListener('change', handleFornecedorSelectChange);
 
 // ==================== PEDIDOS (CRUD via Supabase) ====================
@@ -1170,7 +1198,10 @@ function populatePedidoSelects(){
       '<option value="">Selecione a empresa...</option>' +
       empresasCadastradas.map(e =>
         `<option value="${e.id}">${empresaLabel(e.codigo)}</option>`
-      ).join('');
+      ).join('') +
+      (userPermissions === PERMISSIONS.ADMIN
+        ? '<option value="__NOVA_EMPRESA__">+ Cadastrar nova empresa...</option>'
+        : '');
   }
 
   if(fornecedorSelect){
@@ -1183,6 +1214,82 @@ function populatePedidoSelects(){
       (userPermissions === PERMISSIONS.ADMIN
         ? '<option value="__NOVO_FORNECEDOR__">+ Cadastrar novo fornecedor...</option>'
         : '');
+  }
+}
+
+function handleEmpresaSelectChange(){
+  const empresaSelect = document.getElementById('o_empresa_id');
+  if(!empresaSelect || empresaSelect.value !== '__NOVA_EMPRESA__') return;
+
+  empresaSelect.value = '';
+  openEmpresaModal();
+}
+
+function openEmpresaModal(){
+  if(userPermissions !== PERMISSIONS.ADMIN){
+    showNotification('Apenas administradores podem cadastrar empresas.', 'error');
+    return;
+  }
+
+  document.getElementById('e_codigo').value = '';
+  document.getElementById('e_nome_fantasia').value = '';
+  document.getElementById('e_razao_social').value = '';
+  openModal('modalEmpresa');
+  setTimeout(() => document.getElementById('e_codigo')?.focus(), 0);
+}
+
+async function saveEmpresa(){
+  if(userPermissions !== PERMISSIONS.ADMIN){
+    showNotification('Apenas administradores podem cadastrar empresas.', 'error');
+    return;
+  }
+
+  const codigo = document.getElementById('e_codigo').value.trim().toUpperCase();
+  const nomeFantasia = document.getElementById('e_nome_fantasia').value.trim();
+  const razaoSocial = document.getElementById('e_razao_social').value.trim();
+
+  if(!codigo){ showNotification('Informe o código da empresa.', 'error'); return; }
+  if(!nomeFantasia){ showNotification('Informe o nome fantasia da empresa.', 'error'); return; }
+
+  const duplicadoLocal = empresasCadastradas.some(e =>
+    String(e.codigo || '').trim().toUpperCase() === codigo ||
+    String(e.nome_fantasia || '').trim().toLowerCase() === nomeFantasia.toLowerCase()
+  );
+  if(duplicadoLocal){
+    showNotification('Já existe uma empresa com esse código ou nome fantasia.', 'error');
+    return;
+  }
+
+  const saveBtn = document.getElementById('e_saveBtn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Salvando...';
+
+  try{
+    const { data, error } = await sb
+      .from('empresas')
+      .insert([{
+        codigo: codigo,
+        nome_fantasia: nomeFantasia,
+        razao_social: razaoSocial || null,
+        ativo: true
+      }])
+      .select('id,codigo,razao_social,nome_fantasia,prefixo_numero,cor_primaria,cor_secundaria,ativo')
+      .single();
+
+    if(error) throw error;
+
+    await loadEmpresas();
+    populatePedidoSelects();
+    populateFilterEmpresa();
+    document.getElementById('o_empresa_id').value = data.id;
+    closeModal('modalEmpresa');
+    showNotification(`Empresa ${nomeFantasia} cadastrada com sucesso!`, 'success');
+  }catch(e){
+    console.error('Erro ao cadastrar empresa:', e);
+    showNotification('Erro ao cadastrar empresa: ' + (e.message || e), 'error');
+  }finally{
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Salvar empresa';
   }
 }
 
