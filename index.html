@@ -1095,33 +1095,16 @@ async function loadAll(){
   }
   
   try{
-    // Carregar pedidos, empresas e fornecedores em paralelo para reduzir o tempo de espera.
-    // As três consultas são independentes entre si.
-    const [pedidosResult, empresasResult, fornecedoresResult] = await Promise.all([
-      sb.from('pedidos').select('*'),
-      sb.from('empresas')
-        .select('id,codigo,razao_social,nome_fantasia,prefixo_numero,cor_primaria,cor_secundaria,ativo')
-        .eq('ativo', true)
-        .order('codigo'),
-      sb.from('fornecedores')
-        .select('id,codigo,razao_social,nome_fantasia,ativo')
-        .eq('ativo', true)
-        .order('nome_fantasia')
-    ]);
-
-    if(pedidosResult.error){
+    const { data, error } = await sb.from('pedidos').select('*');
+    
+    if(error){
       document.getElementById('connStatus').className = 'error';
-      document.getElementById('connStatus').textContent = 'Erro ao carregar: ' + pedidosResult.error.message;
+      document.getElementById('connStatus').textContent = 'Erro ao carregar: ' + error.message;
       return;
     }
-    if(empresasResult.error) throw empresasResult.error;
-    if(fornecedoresResult.error) throw fornecedoresResult.error;
-
-    empresasCadastradas = empresasResult.data || [];
-    fornecedoresCadastrados = fornecedoresResult.data || [];
-
-    const allPedidos = (pedidosResult.data || []).map(rowToPedido);
-    pedidos = filterPedidosByUserAccess(allPedidos);
+    
+  const allPedidos = (data||[]).map(rowToPedido);
+  pedidos = filterPedidosByUserAccess(allPedidos);
     
     // Carregar checklists salvos
     pedidos.forEach(p => {
@@ -1133,6 +1116,12 @@ async function loadAll(){
         }
       }
     });
+    
+    // Carregar empresas cadastradas
+    await loadEmpresas();
+
+    // Carregar fornecedores cadastrados
+    await loadFornecedores();
 
     // Preencher filtro de empresas dinamicamente
     populateFilterEmpresa();
