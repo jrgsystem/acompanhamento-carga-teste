@@ -753,12 +753,12 @@
           <input id="e_codigo" placeholder="Ex.: ABC" maxlength="30">
         </div>
         <div>
-          <label>Nome fantasia *</label>
-          <input id="e_nome_fantasia" placeholder="Ex.: Empresa ABC" maxlength="120">
+          <label>Nome fantasia</label>
+          <input id="e_nome_fantasia" placeholder="Ex.: Empresa ABC (opcional)" maxlength="120">
         </div>
         <div class="full">
-          <label>Razão social</label>
-          <input id="e_razao_social" placeholder="Opcional" maxlength="180">
+          <label>Razão social *</label>
+          <input id="e_razao_social" placeholder="Ex.: Empresa ABC Ltda" maxlength="180">
         </div>
       </div>
     </div>
@@ -1249,11 +1249,11 @@ async function saveEmpresa(){
   const razaoSocial = document.getElementById('e_razao_social').value.trim();
 
   if(!codigo){ showNotification('Informe o código da empresa.', 'error'); return; }
-  if(!nomeFantasia){ showNotification('Informe o nome fantasia da empresa.', 'error'); return; }
+  if(!razaoSocial){ showNotification('Informe a razão social da empresa.', 'error'); return; }
 
   const duplicadoLocal = empresasCadastradas.some(e =>
     String(e.codigo || '').trim().toUpperCase() === codigo ||
-    String(e.nome_fantasia || '').trim().toLowerCase() === nomeFantasia.toLowerCase()
+    (nomeFantasia && String(e.nome_fantasia || '').trim().toLowerCase() === nomeFantasia.toLowerCase())
   );
   if(duplicadoLocal){
     showNotification('Já existe uma empresa com esse código ou nome fantasia.', 'error');
@@ -1269,8 +1269,9 @@ async function saveEmpresa(){
       .from('empresas')
       .insert([{
         codigo: codigo,
-        nome_fantasia: nomeFantasia,
-        razao_social: razaoSocial || null,
+        nome_fantasia: nomeFantasia || null,
+        razao_social: razaoSocial,
+        prefixo_numero: codigo,
         ativo: true
       }])
       .select('id,codigo,razao_social,nome_fantasia,prefixo_numero,cor_primaria,cor_secundaria,ativo')
@@ -1345,8 +1346,9 @@ async function saveFornecedor(){
       .from('fornecedores')
       .insert([{
         codigo: codigo,
-        nome_fantasia: nomeFantasia,
-        razao_social: razaoSocial || null,
+        nome_fantasia: nomeFantasia || null,
+        razao_social: razaoSocial,
+        prefixo_numero: codigo,
         ativo: true
       }])
       .select('id,codigo,razao_social,nome_fantasia,ativo')
