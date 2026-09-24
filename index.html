@@ -426,6 +426,7 @@
   <button data-view="graficos">Gráficos</button>
   <button data-view="documentos">Documentos</button>
   <button data-view="atualizacao">Gerar Mensagem</button>
+  <button data-view="cadastros" id="navCadastros" style="display:none;">Cadastros</button>
   <button data-view="usuarios" id="navUsuarios" style="display:none;">Usuários</button>
 </nav>
 
@@ -562,7 +563,6 @@
       <div class="export-buttons" id="checklistExportButtons" style="display:none; margin-top:12px;">
         <button class="btn secondary" onclick="exportChecklistToExcel()">📊 Exportar Excel</button>
         <button class="btn secondary" onclick="exportChecklistToPDF()">📄 Exportar PDF</button>
-        <button class="btn secondary" id="migrateLegacyDocsBtn" onclick="migrateLegacyChecklistFiles()" style="display:none;">☁️ Migrar documentos antigos</button>
       </div>
     </div>
     
@@ -661,6 +661,23 @@
     </div>
   </section>
   
+  <!-- ===================== CADASTROS (ADMIN) ===================== -->
+  <section class="view" id="view-cadastros">
+    <div class="section-title"><h2>Empresas e Fornecedores</h2><span class="hint">Editar, desativar ou reativar cadastros sem apagar o histórico</span></div>
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <h3 style="margin:0;">Empresas</h3><button class="btn" onclick="openEmpresaModal()">+ Nova empresa</button>
+      </div>
+      <div class="table-wrap"><table><thead><tr><th>Código</th><th>Nome fantasia</th><th>Razão social</th><th>Status</th><th>Ações</th></tr></thead><tbody id="empresasAdminBody"></tbody></table></div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <h3 style="margin:0;">Fornecedores</h3><button class="btn" onclick="openFornecedorModal()">+ Novo fornecedor</button>
+      </div>
+      <div class="table-wrap"><table><thead><tr><th>Código</th><th>Nome fantasia</th><th>Razão social</th><th>Status</th><th>Ações</th></tr></thead><tbody id="fornecedoresAdminBody"></tbody></table></div>
+    </div>
+  </section>
+
   <!-- ===================== USUÁRIOS (ADMIN) ===================== -->
   <section class="view" id="view-usuarios">
     <div class="section-title"><h2>Gerenciamento de Usuários</h2><span class="hint">Gerenciar permissões e contas de acesso</span></div>
@@ -748,7 +765,7 @@
 <!-- ===================== MODAL: NOVA EMPRESA ===================== -->
 <div class="modal-overlay" id="modalEmpresa">
   <div class="modal">
-    <div class="modal-head"><h3>Nova empresa</h3><button class="modal-close" onclick="closeModal('modalEmpresa')">×</button></div>
+    <div class="modal-head"><h3 id="modalEmpresaTitle">Nova empresa</h3><button class="modal-close" onclick="closeModal('modalEmpresa')">×</button></div>
     <div class="modal-body">
       <div class="form-grid">
         <div>
@@ -763,6 +780,9 @@
           <label>Razão social *</label>
           <input id="e_razao_social" placeholder="Ex.: Empresa ABC Ltda" maxlength="180">
         </div>
+        <div class="full" id="e_status_wrap" style="display:none;">
+          <label>Status</label><select id="e_ativo"><option value="true">Ativa</option><option value="false">Inativa</option></select>
+        </div>
       </div>
     </div>
     <div class="modal-foot">
@@ -775,7 +795,7 @@
 <!-- ===================== MODAL: NOVO FORNECEDOR ===================== -->
 <div class="modal-overlay" id="modalFornecedor">
   <div class="modal">
-    <div class="modal-head"><h3>Novo fornecedor</h3><button class="modal-close" onclick="closeModal('modalFornecedor')">×</button></div>
+    <div class="modal-head"><h3 id="modalFornecedorTitle">Novo fornecedor</h3><button class="modal-close" onclick="closeModal('modalFornecedor')">×</button></div>
     <div class="modal-body">
       <div class="form-grid">
         <div>
@@ -789,6 +809,9 @@
         <div class="full">
           <label>Razão social</label>
           <input id="f_razao_social" placeholder="Opcional" maxlength="180">
+        </div>
+        <div class="full" id="f_status_wrap" style="display:none;">
+          <label>Status</label><select id="f_ativo"><option value="true">Ativo</option><option value="false">Inativo</option></select>
         </div>
       </div>
     </div>
@@ -816,6 +839,8 @@ let currentUser = null;
 let userPermissions = null;
 let empresasCadastradas = [];
 let fornecedoresCadastrados = [];
+let editingEmpresaId = null;
+let editingFornecedorId = null;
 
 // Inicializar Supabase client quando estiver pronto
 let supabaseReady = false;
@@ -1046,7 +1071,6 @@ async function loadEmpresas(){
     const { data, error } = await sb
       .from('empresas')
       .select('id,codigo,razao_social,nome_fantasia,prefixo_numero,cor_primaria,cor_secundaria,ativo')
-      .eq('ativo', true)
       .order('codigo');
     
     if(error){
@@ -1068,7 +1092,6 @@ async function loadFornecedores(){
     const { data, error } = await sb
       .from('fornecedores')
       .select('id,codigo,razao_social,nome_fantasia,ativo')
-      .eq('ativo', true)
       .order('nome_fantasia');
 
     if(error){
@@ -1183,6 +1206,9 @@ document.getElementById('nav').addEventListener('click', (e)=>{
   if(btn.dataset.view === 'usuarios'){
     loadUsers();
   }
+  if(btn.dataset.view === 'cadastros'){
+    renderCadastrosAdmin();
+  }
   if(btn.dataset.view === 'documentos'){
     refreshChecklistPedidoSelect();
     if(currentChecklistPedido){
@@ -1209,7 +1235,7 @@ function populatePedidoSelects(){
   if(empresaSelect){
     empresaSelect.innerHTML =
       '<option value="">Selecione a empresa...</option>' +
-      empresasCadastradas.map(e =>
+      empresasCadastradas.filter(e => e.ativo !== false).map(e =>
         `<option value="${e.id}">${empresaLabel(e.codigo)}</option>`
       ).join('') +
       (userPermissions === PERMISSIONS.ADMIN
@@ -1220,7 +1246,7 @@ function populatePedidoSelects(){
   if(fornecedorSelect){
     fornecedorSelect.innerHTML =
       '<option value="">Selecione o fornecedor...</option>' +
-      fornecedoresCadastrados.map(f => {
+      fornecedoresCadastrados.filter(f => f.ativo !== false).map(f => {
         const texto = f.nome_fantasia || f.razao_social || f.codigo;
         return `<option value="${f.id}">${texto}</option>`;
       }).join('') +
@@ -1238,15 +1264,20 @@ function handleEmpresaSelectChange(){
   openEmpresaModal();
 }
 
-function openEmpresaModal(){
+function openEmpresaModal(id = null){
   if(userPermissions !== PERMISSIONS.ADMIN){
     showNotification('Apenas administradores podem cadastrar empresas.', 'error');
     return;
   }
 
-  document.getElementById('e_codigo').value = '';
-  document.getElementById('e_nome_fantasia').value = '';
-  document.getElementById('e_razao_social').value = '';
+  editingEmpresaId = id;
+  const e = id ? empresasCadastradas.find(x => x.id === id) : null;
+  document.getElementById('modalEmpresaTitle').textContent = id ? 'Editar empresa' : 'Nova empresa';
+  document.getElementById('e_codigo').value = e?.codigo || '';
+  document.getElementById('e_nome_fantasia').value = e?.nome_fantasia || '';
+  document.getElementById('e_razao_social').value = e?.razao_social || '';
+  document.getElementById('e_ativo').value = String(e?.ativo !== false);
+  document.getElementById('e_status_wrap').style.display = id ? 'block' : 'none';
   openModal('modalEmpresa');
   setTimeout(() => document.getElementById('e_codigo')?.focus(), 0);
 }
@@ -1264,10 +1295,10 @@ async function saveEmpresa(){
   if(!codigo){ showNotification('Informe o código da empresa.', 'error'); return; }
   if(!razaoSocial){ showNotification('Informe a razão social da empresa.', 'error'); return; }
 
-  const duplicadoLocal = empresasCadastradas.some(e =>
+  const duplicadoLocal = empresasCadastradas.some(e => e.id !== editingEmpresaId && (
     String(e.codigo || '').trim().toUpperCase() === codigo ||
     (nomeFantasia && String(e.nome_fantasia || '').trim().toLowerCase() === nomeFantasia.toLowerCase())
-  );
+  ));
   if(duplicadoLocal){
     showNotification('Já existe uma empresa com esse código ou nome fantasia.', 'error');
     return;
@@ -1278,26 +1309,20 @@ async function saveEmpresa(){
   saveBtn.textContent = 'Salvando...';
 
   try{
-    const { data, error } = await sb
-      .from('empresas')
-      .insert([{
-        codigo: codigo,
-        nome_fantasia: nomeFantasia || null,
-        razao_social: razaoSocial,
-        prefixo_numero: codigo,
-        ativo: true
-      }])
-      .select('id,codigo,razao_social,nome_fantasia,prefixo_numero,cor_primaria,cor_secundaria,ativo')
-      .single();
-
+    const payload = { codigo, nome_fantasia: nomeFantasia || null, razao_social: razaoSocial, prefixo_numero: codigo, ativo: editingEmpresaId ? document.getElementById('e_ativo').value === 'true' : true };
+    const query = editingEmpresaId
+      ? sb.from('empresas').update(payload).eq('id', editingEmpresaId)
+      : sb.from('empresas').insert([payload]);
+    const { data, error } = await query.select('id,codigo,razao_social,nome_fantasia,prefixo_numero,cor_primaria,cor_secundaria,ativo').single();
     if(error) throw error;
 
     await loadEmpresas();
     populatePedidoSelects();
     populateFilterEmpresa();
-    document.getElementById('o_empresa_id').value = data.id;
+    if(document.getElementById('o_empresa_id') && data.ativo) document.getElementById('o_empresa_id').value = data.id;
     closeModal('modalEmpresa');
-    showNotification(`Empresa ${nomeFantasia} cadastrada com sucesso!`, 'success');
+    renderCadastrosAdmin();
+    showNotification(`Empresa ${nomeFantasia || razaoSocial} ${editingEmpresaId ? 'atualizada' : 'cadastrada'} com sucesso!`, 'success');
   }catch(e){
     console.error('Erro ao cadastrar empresa:', e);
     showNotification('Erro ao cadastrar empresa: ' + (e.message || e), 'error');
@@ -1315,15 +1340,20 @@ function handleFornecedorSelectChange(){
   openFornecedorModal();
 }
 
-function openFornecedorModal(){
+function openFornecedorModal(id = null){
   if(userPermissions !== PERMISSIONS.ADMIN){
     showNotification('Apenas administradores podem cadastrar fornecedores.', 'error');
     return;
   }
 
-  document.getElementById('f_codigo').value = '';
-  document.getElementById('f_nome_fantasia').value = '';
-  document.getElementById('f_razao_social').value = '';
+  editingFornecedorId = id;
+  const f = id ? fornecedoresCadastrados.find(x => x.id === id) : null;
+  document.getElementById('modalFornecedorTitle').textContent = id ? 'Editar fornecedor' : 'Novo fornecedor';
+  document.getElementById('f_codigo').value = f?.codigo || '';
+  document.getElementById('f_nome_fantasia').value = f?.nome_fantasia || '';
+  document.getElementById('f_razao_social').value = f?.razao_social || '';
+  document.getElementById('f_ativo').value = String(f?.ativo !== false);
+  document.getElementById('f_status_wrap').style.display = id ? 'block' : 'none';
   openModal('modalFornecedor');
   setTimeout(() => document.getElementById('f_codigo')?.focus(), 0);
 }
@@ -1341,10 +1371,10 @@ async function saveFornecedor(){
   if(!codigo){ showNotification('Informe o código do fornecedor.', 'error'); return; }
   if(!nomeFantasia){ showNotification('Informe o nome fantasia do fornecedor.', 'error'); return; }
 
-  const duplicadoLocal = fornecedoresCadastrados.some(f =>
+  const duplicadoLocal = fornecedoresCadastrados.some(f => f.id !== editingFornecedorId && (
     String(f.codigo || '').trim().toUpperCase() === codigo ||
     String(f.nome_fantasia || '').trim().toLowerCase() === nomeFantasia.toLowerCase()
-  );
+  ));
   if(duplicadoLocal){
     showNotification('Já existe um fornecedor com esse código ou nome fantasia.', 'error');
     return;
@@ -1355,25 +1385,19 @@ async function saveFornecedor(){
   saveBtn.textContent = 'Salvando...';
 
   try{
-    const { data, error } = await sb
-      .from('fornecedores')
-      .insert([{
-        codigo: codigo,
-        nome_fantasia: nomeFantasia || null,
-        razao_social: razaoSocial,
-        prefixo_numero: codigo,
-        ativo: true
-      }])
-      .select('id,codigo,razao_social,nome_fantasia,ativo')
-      .single();
-
+    const payload = { codigo, nome_fantasia: nomeFantasia || null, razao_social: razaoSocial || null, ativo: editingFornecedorId ? document.getElementById('f_ativo').value === 'true' : true };
+    const query = editingFornecedorId
+      ? sb.from('fornecedores').update(payload).eq('id', editingFornecedorId)
+      : sb.from('fornecedores').insert([payload]);
+    const { data, error } = await query.select('id,codigo,razao_social,nome_fantasia,ativo').single();
     if(error) throw error;
 
     await loadFornecedores();
     populatePedidoSelects();
-    document.getElementById('o_fornecedor_id').value = data.id;
+    if(document.getElementById('o_fornecedor_id') && data.ativo) document.getElementById('o_fornecedor_id').value = data.id;
     closeModal('modalFornecedor');
-    showNotification(`Fornecedor ${nomeFantasia} cadastrado com sucesso!`, 'success');
+    renderCadastrosAdmin();
+    showNotification(`Fornecedor ${nomeFantasia} ${editingFornecedorId ? 'atualizado' : 'cadastrado'} com sucesso!`, 'success');
   }catch(e){
     console.error('Erro ao cadastrar fornecedor:', e);
     showNotification('Erro ao cadastrar fornecedor: ' + (e.message || e), 'error');
@@ -1381,6 +1405,38 @@ async function saveFornecedor(){
     saveBtn.disabled = false;
     saveBtn.textContent = 'Salvar fornecedor';
   }
+}
+
+function renderCadastrosAdmin(){
+  if(userPermissions !== PERMISSIONS.ADMIN) return;
+  const eb = document.getElementById('empresasAdminBody');
+  const fb = document.getElementById('fornecedoresAdminBody');
+  if(eb){
+    eb.innerHTML = empresasCadastradas.length ? empresasCadastradas.map(e => `<tr><td class="num">${e.codigo || '—'}</td><td>${e.nome_fantasia || '—'}</td><td>${e.razao_social || '—'}</td><td><span class="stamp-badge ${e.ativo !== false ? 'status-finalizado' : 'status-cancelado'}">${e.ativo !== false ? 'ATIVA' : 'INATIVA'}</span></td><td class="actions-cell"><button class="btn small secondary" onclick="openEmpresaModal('${e.id}')">Editar</button><button class="btn small ${e.ativo !== false ? 'danger' : 'secondary'}" onclick="toggleEmpresaAtiva('${e.id}', ${e.ativo !== false})">${e.ativo !== false ? 'Desativar' : 'Reativar'}</button></td></tr>`).join('') : '<tr class="empty-row"><td colspan="5">Nenhuma empresa cadastrada.</td></tr>';
+  }
+  if(fb){
+    fb.innerHTML = fornecedoresCadastrados.length ? fornecedoresCadastrados.map(f => `<tr><td class="num">${f.codigo || '—'}</td><td>${f.nome_fantasia || '—'}</td><td>${f.razao_social || '—'}</td><td><span class="stamp-badge ${f.ativo !== false ? 'status-finalizado' : 'status-cancelado'}">${f.ativo !== false ? 'ATIVO' : 'INATIVO'}</span></td><td class="actions-cell"><button class="btn small secondary" onclick="openFornecedorModal('${f.id}')">Editar</button><button class="btn small ${f.ativo !== false ? 'danger' : 'secondary'}" onclick="toggleFornecedorAtivo('${f.id}', ${f.ativo !== false})">${f.ativo !== false ? 'Desativar' : 'Reativar'}</button></td></tr>`).join('') : '<tr class="empty-row"><td colspan="5">Nenhum fornecedor cadastrado.</td></tr>';
+  }
+}
+
+async function toggleEmpresaAtiva(id, ativaAtual){
+  if(userPermissions !== PERMISSIONS.ADMIN) return;
+  const acao = ativaAtual ? 'desativar' : 'reativar';
+  if(!confirm(`Deseja ${acao} esta empresa? O histórico dos pedidos será preservado.`)) return;
+  const { error } = await sb.from('empresas').update({ ativo: !ativaAtual }).eq('id', id);
+  if(error){ showNotification('Erro ao atualizar empresa: ' + error.message, 'error'); return; }
+  await loadEmpresas(); populatePedidoSelects(); populateFilterEmpresa(); renderCadastrosAdmin();
+  showNotification(`Empresa ${ativaAtual ? 'desativada' : 'reativada'} com sucesso.`, 'success');
+}
+
+async function toggleFornecedorAtivo(id, ativoAtual){
+  if(userPermissions !== PERMISSIONS.ADMIN) return;
+  const acao = ativoAtual ? 'desativar' : 'reativar';
+  if(!confirm(`Deseja ${acao} este fornecedor? O histórico dos pedidos será preservado.`)) return;
+  const { error } = await sb.from('fornecedores').update({ ativo: !ativoAtual }).eq('id', id);
+  if(error){ showNotification('Erro ao atualizar fornecedor: ' + error.message, 'error'); return; }
+  await loadFornecedores(); populatePedidoSelects(); renderCadastrosAdmin();
+  showNotification(`Fornecedor ${ativoAtual ? 'desativado' : 'reativado'} com sucesso.`, 'success');
 }
 
 function openPedidoModal(id){
@@ -2932,6 +2988,8 @@ function updateUserDisplay(){
   display.textContent = `${name} (${permLabel[userPermissions]})`;
   
   // Mostrar aba de usuários apenas para Admin
+  const navCadastros = document.getElementById('navCadastros');
+  if(navCadastros) navCadastros.style.display = userPermissions === PERMISSIONS.ADMIN ? 'block' : 'none';
   const navUsuarios = document.getElementById('navUsuarios');
   if(navUsuarios){
     navUsuarios.style.display = userPermissions === PERMISSIONS.ADMIN ? 'block' : 'none';
