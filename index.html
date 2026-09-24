@@ -354,41 +354,16 @@
       <p>Real Comércio (RLC) & JR Rodrigues (JRV)</p>
     </div>
     
-    <div class="login-tabs">
-      <button class="login-tab active" data-tab="login" onclick="switchLoginTab('login')">Entrar</button>
-      <button class="login-tab" data-tab="register" onclick="switchLoginTab('register')">Cadastrar</button>
-    </div>
-    
     <form id="loginForm" class="login-form" onsubmit="handleLogin(event)">
       <div class="form-group">
-        <label>Usuário</label>
-        <input type="text" id="loginUsername" required placeholder="Seu usuário">
+        <label>E-mail</label>
+        <input type="email" id="loginUsername" required placeholder="seuemail@empresa.com">
       </div>
       <div class="form-group">
         <label>Senha</label>
         <input type="password" id="loginPassword" required placeholder="••••••••">
       </div>
       <button type="submit" class="btn" style="width:100%; margin-top:16px;">Entrar</button>
-    </form>
-    
-    <form id="registerForm" class="login-form" style="display:none;" onsubmit="handleRegister(event)">
-      <div class="form-group">
-        <label>Nome Completo</label>
-        <input type="text" id="registerName" required placeholder="Seu nome">
-      </div>
-      <div class="form-group">
-        <label>Usuário</label>
-        <input type="text" id="registerUsername" required placeholder="Nome de usuário">
-      </div>
-      <div class="form-group">
-        <label>Senha</label>
-        <input type="password" id="registerPassword" required placeholder="Mínimo 6 caracteres" minlength="6">
-      </div>
-      <div class="form-group">
-        <label>Confirmar Senha</label>
-        <input type="password" id="registerConfirmPassword" required placeholder="Repita a senha">
-      </div>
-      <button type="submit" class="btn" style="width:100%; margin-top:16px;">Cadastrar</button>
     </form>
     
     <div id="loginError" class="login-error" style="display:none;"></div>
@@ -680,29 +655,22 @@
 
   <!-- ===================== USUÁRIOS (ADMIN) ===================== -->
   <section class="view" id="view-usuarios">
-    <div class="section-title"><h2>Gerenciamento de Usuários</h2><span class="hint">Gerenciar permissões e contas de acesso</span></div>
-    
+    <div class="section-title"><h2>Gerenciamento de Usuários</h2><span class="hint">Contas reais vinculadas ao Supabase Auth</span></div>
     <div class="panel">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-        <h3>Usuários Cadastrados</h3>
-        <button class="btn" onclick="loadUsers()">↻ Atualizar</button>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+        <div>
+          <h3 style="margin:0 0 4px;">Usuários Cadastrados</h3>
+          <div class="hint">Fonte: user_profiles + user_empresas. A tabela legada app_users não é mais utilizada.</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="btn secondary" onclick="loadUsers()">↻ Atualizar</button>
+          <button class="btn" disabled title="Será habilitado após configurarmos a criação segura no Supabase Auth">+ Novo usuário</button>
+        </div>
       </div>
-      
-      <div id="usersTableContainer">
+      <div class="table-wrap">
         <table class="data-table">
-          <thead>
-            <tr>
-              <th>Nome</th>
-              <th>Usuário</th>
-              <th>Permissão</th>
-              <th>Empresas</th>
-              <th>Data Cadastro</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody id="usersTableBody">
-            <tr class="empty-row"><td colspan="6">Carregando usuários...</td></tr>
-          </tbody>
+          <thead><tr><th>Nome</th><th>Usuário</th><th>Permissão</th><th>Empresas</th><th>Status</th><th>Data Cadastro</th></tr></thead>
+          <tbody id="usersTableBody"><tr class="empty-row"><td colspan="6">Carregando usuários...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -2662,201 +2630,73 @@ function exportChecklistToPDF(){
   showNotification('Checklist exportado para PDF!', 'success');
 }
 
-// ===================== AUTENTICAÇÃO ====================
-// Função simples de hash para senha (para produção, use bcrypt ou similar)
-function simpleHash(str){
-  let hash = 0;
-  for(let i = 0; i < str.length; i++){
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return hash.toString(16);
-}
-
 // ===================== GERENCIAMENTO DE USUÁRIOS ====================
+// A aba de usuários usa somente user_profiles + user_empresas.
+// Criação/alteração de contas do Supabase Auth será feita por backend administrativo seguro.
 async function loadUsers(){
   if(!hasPermission(PERMISSIONS.ADMIN)){
     showNotification('Apenas administradores podem gerenciar usuários', 'error');
     return;
   }
-  
+
+  const tbody = document.getElementById('usersTableBody');
+  if(tbody) tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Carregando usuários...</td></tr>`;
+
   try{
-    const { data, error } = await sb.from('app_users').select('*').order('created_at', { ascending: false });
-    
-    if(error){
-      showNotification('Erro ao carregar usuários: ' + error.message, 'error');
-      return;
-    }
-    
-    renderUsersTable(data || []);
+    const { data: profiles, error: profilesError } = await sb
+      .from('user_profiles')
+      .select('id, username, full_name, permission, active, created_at')
+      .order('created_at', { ascending: false });
+    if(profilesError) throw profilesError;
+
+    const { data: vinculos, error: vinculosError } = await sb
+      .from('user_empresas')
+      .select(`user_id, empresa_id, empresas(id, codigo, nome_fantasia, razao_social)`);
+    if(vinculosError) throw vinculosError;
+
+    const empresasPorUsuario = {};
+    (vinculos || []).forEach(v => {
+      if(!empresasPorUsuario[v.user_id]) empresasPorUsuario[v.user_id] = [];
+      if(v.empresas) empresasPorUsuario[v.user_id].push(v.empresas);
+    });
+
+    const users = (profiles || []).map(profile => ({
+      ...profile,
+      empresasPermitidas: empresasPorUsuario[profile.id] || []
+    }));
+    renderUsersTable(users);
   }catch(e){
-    showNotification('Erro ao carregar usuários: ' + e.message, 'error');
+    console.error('Erro ao carregar usuários reais:', e);
+    if(tbody) tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Erro ao carregar usuários.</td></tr>`;
+    showNotification('Erro ao carregar usuários: ' + (e.message || e), 'error');
   }
 }
 
 function renderUsersTable(users){
   const tbody = document.getElementById('usersTableBody');
-  
+  if(!tbody) return;
   if(users.length === 0){
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Nenhum usuário cadastrado.</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Nenhum usuário real cadastrado.</td></tr>`;
     return;
   }
-  
-  const permLabel = {
-    [PERMISSIONS.ADMIN]: 'Admin',
-    [PERMISSIONS.EDITOR]: 'Editor',
-    [PERMISSIONS.VIEWER]: 'Visualizador'
-  };
-  
-  const permClass = {
-    [PERMISSIONS.ADMIN]: 's-finalizado',
-    [PERMISSIONS.EDITOR]: 's-viagem',
-    [PERMISSIONS.VIEWER]: 's-sinal'
-  };
-  
-  tbody.innerHTML = users.map(user => `
-    <tr>
-      <td>${user.full_name}</td>
-      <td>${user.username}</td>
-      <td><span class="stamp-badge ${permClass[user.permission] || ''}">${permLabel[user.permission] || user.permission}</span></td>
-      <td>
-        <select onchange="changeUserEmpresas('${user.id}', this.value)" style="padding:4px; font-size:12px;">
-          <option value="${EMPRESAS.RLC}" ${user.empresas === EMPRESAS.RLC ? 'selected' : ''}>Apenas RLC</option>
-          <option value="${EMPRESAS.JRV}" ${user.empresas === EMPRESAS.JRV ? 'selected' : ''}>Apenas JRV</option>
-          <option value="${EMPRESAS.AMBAS}" ${user.empresas === EMPRESAS.AMBAS ? 'selected' : ''}>Ambas (RLC + JRV)</option>
-        </select>
-      </td>
-      <td>${new Date(user.created_at).toLocaleDateString('pt-BR')}</td>
-      <td>
-        <select onchange="changeUserPermission('${user.id}', this.value)" style="padding:4px; font-size:12px;">
-          <option value="${PERMISSIONS.VIEWER}" ${user.permission === PERMISSIONS.VIEWER ? 'selected' : ''}>Visualizador</option>
-          <option value="${PERMISSIONS.EDITOR}" ${user.permission === PERMISSIONS.EDITOR ? 'selected' : ''}>Editor</option>
-          <option value="${PERMISSIONS.ADMIN}" ${user.permission === PERMISSIONS.ADMIN ? 'selected' : ''}>Admin</option>
-        </select>
-        <button class="btn small ghost" onclick="resetUserPassword('${user.id}')" style="margin-left:4px; padding:4px 8px;">🔑 Reset</button>
-        <button class="btn small danger" onclick="deleteUser('${user.id}')" style="margin-left:4px; padding:4px 8px;">🗑️</button>
-      </td>
-    </tr>
-  `).join('');
-}
 
-async function changeUserPermission(userId, newPermission){
-  if(!hasPermission(PERMISSIONS.ADMIN)){
-    showNotification('Apenas administradores podem alterar permissões', 'error');
-    return;
-  }
-  
-  // Não permitir remover permissão de admin do próprio usuário
-  if(userId === currentUser.id && newPermission !== PERMISSIONS.ADMIN){
-    showNotification('Você não pode remover sua própria permissão de Admin', 'error');
-    loadUsers(); // Recarregar para restaurar valor
-    return;
-  }
-  
-  try{
-    const { error } = await sb.from('app_users').update({ permission: newPermission }).eq('id', userId);
-    
-    if(error){
-      showNotification('Erro ao alterar permissão: ' + error.message, 'error');
-      loadUsers();
-      return;
-    }
-    
-    showNotification('Permissão alterada com sucesso!', 'success');
-  }catch(e){
-    showNotification('Erro ao alterar permissão: ' + e.message, 'error');
-    loadUsers();
-  }
-}
+  const permLabel = { admin:'Admin', editor:'Editor', viewer:'Visualizador' };
+  const permClass = { admin:'s-finalizado', editor:'s-viagem', viewer:'s-sinal' };
 
-async function changeUserEmpresas(userId, newEmpresas){
-  if(!hasPermission(PERMISSIONS.ADMIN)){
-    showNotification('Apenas administradores podem alterar empresas', 'error');
-    return;
-  }
-  
-  try{
-    const { error } = await sb.from('app_users').update({ empresas: newEmpresas }).eq('id', userId);
-    
-    if(error){
-      showNotification('Erro ao alterar empresas: ' + error.message, 'error');
-      loadUsers();
-      return;
-    }
-    
-    showNotification('Empresas alteradas com sucesso!', 'success');
-  }catch(e){
-    showNotification('Erro ao alterar empresas: ' + e.message, 'error');
-    loadUsers();
-  }
-}
-
-async function deleteUser(userId){
-  if(!hasPermission(PERMISSIONS.ADMIN)){
-    showNotification('Apenas administradores podem excluir usuários', 'error');
-    return;
-  }
-  
-  // Não permitir excluir o próprio usuário
-  if(userId === currentUser.id){
-    showNotification('Você não pode excluir seu próprio usuário', 'error');
-    return;
-  }
-  
-  if(!confirm('Tem certeza que deseja excluir este usuário? Esta ação não pode ser desfeita.')){
-    return;
-  }
-  
-  try{
-    const { error } = await sb.from('app_users').delete().eq('id', userId);
-    
-    if(error){
-      showNotification('Erro ao excluir usuário: ' + error.message, 'error');
-      return;
-    }
-    
-    showNotification('Usuário excluído com sucesso!', 'success');
-    loadUsers();
-  }catch(e){
-    showNotification('Erro ao excluir usuário: ' + e.message, 'error');
-  }
-}
-
-async function resetUserPassword(userId){
-  if(!hasPermission(PERMISSIONS.ADMIN)){
-    showNotification('Apenas administradores podem resetar senhas', 'error');
-    return;
-  }
-  
-  const newPassword = prompt('Digite a nova senha para o usuário:');
-  if(!newPassword || newPassword.length < 6){
-    showNotification('A senha deve ter no mínimo 6 caracteres', 'error');
-    return;
-  }
-  
-  try{
-    const hashedPassword = simpleHash(newPassword);
-    const { error } = await sb.from('app_users').update({ password: hashedPassword }).eq('id', userId);
-    
-    if(error){
-      showNotification('Erro ao resetar senha: ' + error.message, 'error');
-      return;
-    }
-    
-    showNotification('Senha resetada com sucesso!', 'success');
-  }catch(e){
-    showNotification('Erro ao resetar senha: ' + e.message, 'error');
-  }
-}
-
-function switchLoginTab(tab){
-  document.querySelectorAll('.login-tab').forEach(t => t.classList.remove('active'));
-  document.querySelector(`.login-tab[data-tab="${tab}"]`).classList.add('active');
-  
-  document.getElementById('loginForm').style.display = tab === 'login' ? 'block' : 'none';
-  document.getElementById('registerForm').style.display = tab === 'register' ? 'block' : 'none';
-  document.getElementById('loginError').style.display = 'none';
+  tbody.innerHTML = users.map(user => {
+    const empresas = (user.empresasPermitidas || [])
+      .map(e => e.nome_fantasia || e.razao_social || e.codigo)
+      .join(', ') || 'Nenhuma';
+    return `
+      <tr>
+        <td>${escapeHtml(user.full_name || '—')}</td>
+        <td>${escapeHtml(user.username || '—')}</td>
+        <td><span class="stamp-badge ${permClass[user.permission] || ''}">${permLabel[user.permission] || escapeHtml(user.permission || '—')}</span></td>
+        <td>${escapeHtml(empresas)}</td>
+        <td><span class="stamp-badge ${user.active ? 's-finalizado' : 's-atrasado'}">${user.active ? 'Ativo' : 'Inativo'}</span></td>
+        <td>${user.created_at ? new Date(user.created_at).toLocaleDateString('pt-BR') : '—'}</td>
+      </tr>`;
+  }).join('');
 }
 
 async function handleLogin(event){
@@ -2912,60 +2752,6 @@ async function handleLogin(event){
     console.log(`[PERF] handleLogin até liberar interface: ${(performance.now() - perfLoginTotal).toFixed(1)} ms`);
   }catch(error){
     showLoginError('Erro ao fazer login: ' + error.message);
-  }
-}
-
-async function handleRegister(event){
-  event.preventDefault();
-  const name = document.getElementById('registerName').value;
-  const username = document.getElementById('registerUsername').value;
-  const password = document.getElementById('registerPassword').value;
-  const confirmPassword = document.getElementById('registerConfirmPassword').value;
-  
-  if(password !== confirmPassword){
-    showLoginError('As senhas não coincidem');
-    return;
-  }
-  
-  try{
-    // Verificar se usuário já existe
-    const { data: existingUser, error: checkError } = await sb.from('app_users').select('id').eq('username', username).maybeSingle();
-    if(checkError && checkError.code !== 'PGRST116'){
-      // Erro diferente de "not found"
-      throw checkError;
-    }
-    if(existingUser){
-      showLoginError('Este nome de usuário já está em uso');
-      return;
-    }
-    
-    // Verificar se é o primeiro usuário (admin)
-    let isFirstUser = true;
-    try{
-      const { data: { count } } = await sb.from('app_users').select('*', { count: 'exact', head: true });
-      isFirstUser = count === 0;
-    }catch(e){
-      // Se a tabela não existe ou está vazia, assume que é o primeiro
-      isFirstUser = true;
-    }
-    
-    const hashedPassword = simpleHash(password);
-    
-    const { error } = await sb.from('app_users').insert({
-      username,
-      password: hashedPassword,
-      full_name: name,
-      permission: isFirstUser ? PERMISSIONS.ADMIN : PERMISSIONS.VIEWER,
-      empresas: EMPRESAS.AMBAS, // Padrão: acesso a ambas
-      created_at: new Date().toISOString()
-    });
-    
-    if(error) throw error;
-    
-    showNotification('Cadastro realizado! Faça login para continuar.', 'success');
-    switchLoginTab('login');
-  }catch(error){
-    showLoginError('Erro ao cadastrar: ' + error.message);
   }
 }
 
