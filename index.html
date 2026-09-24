@@ -562,6 +562,7 @@
       <div class="export-buttons" id="checklistExportButtons" style="display:none; margin-top:12px;">
         <button class="btn secondary" onclick="exportChecklistToExcel()">📊 Exportar Excel</button>
         <button class="btn secondary" onclick="exportChecklistToPDF()">📄 Exportar PDF</button>
+        <button class="btn secondary" id="migrateLegacyDocsBtn" onclick="migrateLegacyChecklistFiles()" style="display:none;">☁️ Migrar documentos antigos</button>
       </div>
     </div>
     
@@ -2161,6 +2162,7 @@ function renderAllCategories(){
   renderCategory('fiscal');
   renderCategory('transporte');
   renderCategory('legal');
+  updateLegacyMigrationButton();
 }
 
 function renderCategory(category){
@@ -2374,6 +2376,128 @@ function getChecklistSummary(){
   });
   
   return { total, completed, percentage: total > 0 ? Math.round((completed / total) * 100) : 0 };
+}
+
+// ==================== MIGRAÇÃO SEGURA DE DOCUMENTOS LEGADOS ====================
+function dataUrlToBlob(dataUrl){
+  const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl || '');
+  if(!match) throw new Error('Formato de documento legado não reconhecido');
+  const mime = match[1] || 'application/octet-stream';
+  const isBase64 = !!match[2];
+  const payload = match[3] || '';
+  if(isBase64){
+    const binary = atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for(let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+  return new Blob([decodeURIComponent(payload)], { type: mime });
+}
+
+function countLegacyChecklistFiles(data){
+  let count = 0;
+  Object.values(data || {}).forEach(items => {
+    if(!Array.isArray(items)) return;
+    items.forEach(item => (item.files || []).forEach(file => {
+      if(file?.data && !file?.storage_path) count++;
+    }));
+  });
+  return count;
+}
+
+function updateLegacyMigrationButton(){
+  const btn = document.getElementById('migrateLegacyDocsBtn');
+  if(!btn) return;
+  const data = currentChecklistPedido ? checklistData[currentChecklistPedido] : null;
+  const legacyCount = countLegacyChecklistFiles(data);
+  btn.style.display = (userPermissions === PERMISSIONS.ADMIN && legacyCount > 0) ? 'inline-block' : 'none';
+  btn.textContent = legacyCount > 0 ? `☁️ Migrar ${legacyCount} documento(s) antigo(s)` : '☁️ Migrar documentos antigos';
+}
+
+async function migrateLegacyChecklistFiles(){
+  if(userPermissions !== PERMISSIONS.ADMIN){
+    showNotification('Somente administradores podem migrar documentos antigos.', 'error');
+    return;
+  }
+  if(!currentChecklistPedido || !checklistData[currentChecklistPedido]) return;
+
+  const pedido = pedidos.find(p => p.id === currentChecklistPedido);
+  if(!pedido) return;
+
+  const originalData = checklistData[currentChecklistPedido];
+  const legacyCount = countLegacyChecklistFiles(originalData);
+  if(!legacyCount){
+    showNotification('Este pedido não possui documentos antigos para migrar.', 'info');
+    updateLegacyMigrationButton();
+    return;
+  }
+
+  if(!confirm(`Migrar ${legacyCount} documento(s) antigo(s) deste pedido para o Supabase Storage?\n\nOs dados antigos só serão substituídos no banco depois que TODOS os uploads terminarem com sucesso.`)) return;
+
+  const btn = document.getElementById('migrateLegacyDocsBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Migrando...'; }
+
+  // Trabalha em uma cópia. O checklist atual e o banco permanecem intactos até o fim.
+  const migratedData = structuredClone(originalData);
+  const uploadedPaths = [];
+  let migrated = 0;
+
+  try{
+    for(const [category, items] of Object.entries(migratedData)){
+      if(!Array.isArray(items)) continue;
+      for(const item of items){
+        if(!Array.isArray(item.files)) continue;
+        for(let fileIndex = 0; fileIndex < item.files.length; fileIndex++){
+          const file = item.files[fileIndex];
+          if(!file?.data || file?.storage_path) continue;
+
+          const blob = dataUrlToBlob(file.data);
+          const safeName = (file.name || `documento_${fileIndex + 1}`).replace(/[^a-zA-Z0-9._-]/g, '_');
+          const uniqueName = `migrado_${Date.now()}_${Math.random().toString(36).slice(2,8)}_${safeName}`;
+          const storagePath = `${pedido.id}/${category}/${item.id || 'item'}/${uniqueName}`;
+
+          showNotification(`Migrando ${migrated + 1}/${legacyCount}: ${file.name || 'documento'}...`, 'info');
+          const { error: uploadError } = await sb.storage
+            .from(DOCUMENTOS_BUCKET)
+            .upload(storagePath, blob, { contentType: file.type || blob.type || 'application/octet-stream', upsert: false });
+          if(uploadError) throw uploadError;
+          uploadedPaths.push(storagePath);
+
+          // Remove apenas o Base64 da CÓPIA e mantém os metadados necessários.
+          const { data, ...metadata } = file;
+          item.files[fileIndex] = {
+            ...metadata,
+            size: file.size || blob.size,
+            type: file.type || blob.type,
+            storage_path: storagePath
+          };
+          migrated++;
+        }
+      }
+    }
+
+    // Uma única gravação no final: se falhar, o checklist antigo no banco continua intacto.
+    const { error: saveError } = await sb.from('pedidos').update({
+      checklist: JSON.stringify(migratedData)
+    }).eq('id', currentChecklistPedido);
+    if(saveError) throw saveError;
+
+    checklistData[currentChecklistPedido] = migratedData;
+    ['comercial','fiscal','transporte','legal'].forEach(renderCategory);
+    updateLegacyMigrationButton();
+    showNotification(`${migrated} documento(s) migrado(s) com sucesso para o Storage.`, 'success');
+  }catch(e){
+    console.error('Erro na migração de documentos antigos:', e);
+    // Como o banco ainda contém os Base64 antigos se a gravação final falhou,
+    // podemos remover com segurança os uploads desta tentativa para evitar órfãos.
+    if(uploadedPaths.length){
+      try{ await sb.storage.from(DOCUMENTOS_BUCKET).remove(uploadedPaths); }catch(cleanupError){ console.error('Falha ao limpar uploads da migração:', cleanupError); }
+    }
+    showNotification('Migração cancelada sem substituir os documentos antigos: ' + (e.message || e), 'error');
+  }finally{
+    if(btn) btn.disabled = false;
+    updateLegacyMigrationButton();
+  }
 }
 
 // ==================== PERSISTÊNCIA DO CHECKLIST ====================
