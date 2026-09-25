@@ -427,7 +427,7 @@
 
   <!-- ===================== PEDIDOS ===================== -->
   <section class="view" id="view-pedidos">
-    <div class="section-title"><h2>Pedidos</h2><button class="btn" onclick="openPedidoModal()">+ Novo pedido</button></div>
+    <div class="section-title"><h2>Pedidos</h2><button class="btn" id="btnNovoPedido" onclick="openPedidoModal()">+ Novo pedido</button></div>
     <div class="export-buttons">
       <button class="btn secondary" onclick="exportToExcel()">📊 Exportar Excel</button>
       <button class="btn secondary" onclick="exportToPDF()">📄 Exportar PDF</button>
@@ -1846,7 +1846,7 @@ function renderPedidosTable(){
       <td>${p.agente||'—'}</td><td class="num">${p.bl||'—'}</td><td>${fmtDate(p.chegadaPrev)}</td>
       <td>${fmtDate(p.atracacao)}</td><td>${p.porto||'—'}</td><td>${fmtDate(p.entrega)}</td>
       <td><span class="stamp-badge ${STATUS_CLASS[p.status]||''}">${p.status}</span></td>
-      <td class="actions-cell"><button class="btn small secondary" onclick="openPedidoModal('${p.id}')">Editar</button></td>
+      <td class="actions-cell">${hasPermission(PERMISSIONS.EDITOR) ? `<button class="btn small secondary" onclick="openPedidoModal('${p.id}')">Editar</button>` : '—'}</td>
     </tr>
   `).join('');
 }
@@ -3111,6 +3111,8 @@ loadAll = async function(){
   await checkSession();
   if(currentUser){
     await originalLoadAll();
+    updatePedidoPermissionUI();
+    renderPedidosTable();
   }
 };
 
@@ -3122,6 +3124,13 @@ function hasPermission(requiredPermission){
   };
   
   return permissionLevels[userPermissions] >= permissionLevels[requiredPermission];
+}
+
+function updatePedidoPermissionUI(){
+  const btnNovoPedido = document.getElementById('btnNovoPedido');
+  if(btnNovoPedido){
+    btnNovoPedido.style.display = hasPermission(PERMISSIONS.EDITOR) ? '' : 'none';
+  }
 }
 
 // Modificar funções para verificar permissões
