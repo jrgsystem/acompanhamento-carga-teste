@@ -2717,7 +2717,18 @@ async function criarNovoUsuario(){
   btn.textContent = 'Criando...';
 
   try{
+    // Envia explicitamente o JWT da sessão atual para a Edge Function.
+    // A função usa auth: 'user', portanto precisa receber Authorization: Bearer <access_token>.
+    const { data: sessionData, error: sessionError } = await sb.auth.getSession();
+    const accessToken = sessionData?.session?.access_token;
+    if(sessionError || !accessToken){
+      throw new Error('Sua sessão expirou. Saia e entre novamente no sistema.');
+    }
+
     const { data, error } = await sb.functions.invoke('criar-usuario', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      },
       body: { email, password, username, full_name, permission, empresa_ids }
     });
     if(error){
