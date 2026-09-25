@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Acompanhamento de Carga — RLC & JRV</title>
+<title>Acompanhamento de Carga - Follow Up</title>
 <script>window.__appPerfStart = performance.now();</script>
 <script type="module">
   import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
@@ -350,8 +350,8 @@
   <div class="login-container">
     <div class="login-header">
       <div class="login-logo">📦</div>
-      <h1>Acompanhamento de Carga</h1>
-      <p>Real Comércio (RLC) & JR Rodrigues (JRV)</p>
+      <h1>Acompanhamento de Carga - Follow Up</h1>
+      <p>Comércio Exterior</p>
     </div>
     
     <form id="loginForm" class="login-form" onsubmit="handleLogin(event)">
@@ -377,8 +377,7 @@
   <div class="masthead-row">
     <div>
       <div class="masthead-eyebrow">Manifesto de Carga · Comércio Exterior</div>
-      <h1>Acompanhamento de Carga</h1>
-      <div class="masthead-sub">Real Comércio (RLC) & JR Rodrigues Variedades (JRV) — Importação da China</div>
+      <h1>Acompanhamento de Carga - Follow Up</h1>
     </div>
     <div class="masthead-meta">
       <div>Destino: <b>Manaus / SUFRAMA</b></div>
@@ -408,7 +407,7 @@
 <main>
   <!-- ===================== RESUMO ===================== -->
   <section class="view active" id="view-resumo">
-    <div class="section-title"><h2>Resumo</h2><span class="hint">Panorama geral dos pedidos das duas empresas</span></div>
+    <div class="section-title"><h2>Resumo</h2><span class="hint">Panorama geral dos pedidos</span></div>
     <div class="stat-grid" id="statGrid"></div>
     <div class="panel" id="deadlineAlertsPanel">
       <h3>⚠️ Alertas de Prazos</h3>
@@ -660,7 +659,7 @@
       <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
         <div>
           <h3 style="margin:0 0 4px;">Usuários Cadastrados</h3>
-          <div class="hint">Fonte: user_profiles + user_empresas. A tabela legada app_users não é mais utilizada.</div>
+          <div class="hint">Gerencie permissões, empresas vinculadas e status de acesso.</div>
         </div>
         <div style="display:flex; gap:8px; align-items:center;">
           <button class="btn secondary" onclick="loadUsers()">↻ Atualizar</button>
@@ -669,8 +668,8 @@
       </div>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>Nome</th><th>Usuário</th><th>Permissão</th><th>Empresas</th><th>Status</th><th>Data Cadastro</th></tr></thead>
-          <tbody id="usersTableBody"><tr class="empty-row"><td colspan="6">Carregando usuários...</td></tr></tbody>
+          <thead><tr><th>Nome</th><th>Usuário</th><th>Permissão</th><th>Empresas</th><th>Status</th><th>Data Cadastro</th><th>Ações</th></tr></thead>
+          <tbody id="usersTableBody"><tr class="empty-row"><td colspan="7">Carregando usuários...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -699,7 +698,30 @@
   </div>
 </div>
 
-<footer>Painel de controle interno · Real Comércio (RLC) & JR Rodrigues Variedades (JRV) · dados salvos no Supabase</footer>
+<!-- ===================== MODAL: EDITAR USUÁRIO ===================== -->
+<div class="modal-overlay" id="modalEditarUsuario">
+  <div class="modal">
+    <div class="modal-head"><h3>Editar usuário</h3><button class="modal-close" onclick="closeModal('modalEditarUsuario')">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div><label>Nome completo *</label><input id="eu_full_name" autocomplete="off"></div>
+        <div><label>Usuário *</label><input id="eu_username" autocomplete="off"></div>
+        <div><label>Permissão *</label><select id="eu_permission"><option value="viewer">Visualizador</option><option value="editor">Editor</option><option value="admin">Admin</option></select></div>
+        <div><label>Status</label><input id="eu_status" disabled></div>
+        <div class="full"><label>Empresas permitidas *</label><div id="eu_empresas" style="display:grid;gap:8px;padding:10px 0;"></div></div>
+      </div>
+      <div class="hint" style="margin-top:10px;">O e-mail e a senha de autenticação não são alterados nesta tela.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn danger" id="eu_deleteBtn" onclick="gerenciarUsuarioAcao('excluir')">Excluir permanentemente</button>
+      <button class="btn warning" id="eu_statusBtn" onclick="alternarStatusUsuario()">Desativar</button>
+      <button class="btn ghost" onclick="closeModal('modalEditarUsuario')">Cancelar</button>
+      <button class="btn" id="eu_saveBtn" onclick="salvarEdicaoUsuario()">Salvar alterações</button>
+    </div>
+  </div>
+</div>
+
+<footer>Painel de controle interno</footer>
 
 <!-- ===================== MODAL: PEDIDO ===================== -->
 <div class="modal-overlay" id="modalPedido">
@@ -831,6 +853,8 @@ let empresasCadastradas = [];
 let fornecedoresCadastrados = [];
 let editingEmpresaId = null;
 let editingFornecedorId = null;
+let usuariosCarregados = [];
+let editingUsuarioId = null;
 
 // Inicializar Supabase client quando estiver pronto
 let supabaseReady = false;
@@ -2762,7 +2786,7 @@ async function loadUsers(){
   }
 
   const tbody = document.getElementById('usersTableBody');
-  if(tbody) tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Carregando usuários...</td></tr>`;
+  if(tbody) tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Carregando usuários...</td></tr>`;
 
   try{
     const { data: profiles, error: profilesError } = await sb
@@ -2786,10 +2810,11 @@ async function loadUsers(){
       ...profile,
       empresasPermitidas: empresasPorUsuario[profile.id] || []
     }));
+    usuariosCarregados = users;
     renderUsersTable(users);
   }catch(e){
     console.error('Erro ao carregar usuários reais:', e);
-    if(tbody) tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Erro ao carregar usuários.</td></tr>`;
+    if(tbody) tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Erro ao carregar usuários.</td></tr>`;
     showNotification('Erro ao carregar usuários: ' + (e.message || e), 'error');
   }
 }
@@ -2798,7 +2823,7 @@ function renderUsersTable(users){
   const tbody = document.getElementById('usersTableBody');
   if(!tbody) return;
   if(users.length === 0){
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Nenhum usuário real cadastrado.</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Nenhum usuário real cadastrado.</td></tr>`;
     return;
   }
 
@@ -2817,8 +2842,131 @@ function renderUsersTable(users){
         <td>${escapeHtml(empresas)}</td>
         <td><span class="stamp-badge ${user.active ? 's-finalizado' : 's-atrasado'}">${user.active ? 'Ativo' : 'Inativo'}</span></td>
         <td>${user.created_at ? new Date(user.created_at).toLocaleDateString('pt-BR') : '—'}</td>
+        <td class="actions-cell"><button class="btn secondary small" onclick="openEditarUsuarioModal('${escapeHtml(user.id)}')">Editar</button></td>
       </tr>`;
   }).join('');
+}
+
+
+function openEditarUsuarioModal(userId){
+  if(!hasPermission(PERMISSIONS.ADMIN)){
+    showNotification('Apenas administradores podem gerenciar usuários', 'error');
+    return;
+  }
+  const user = usuariosCarregados.find(u => u.id === userId);
+  if(!user){
+    showNotification('Usuário não encontrado. Atualize a lista e tente novamente.', 'error');
+    return;
+  }
+  editingUsuarioId = user.id;
+  document.getElementById('eu_full_name').value = user.full_name || '';
+  document.getElementById('eu_username').value = user.username || '';
+  document.getElementById('eu_permission').value = user.permission || 'viewer';
+  document.getElementById('eu_status').value = user.active ? 'Ativo' : 'Inativo';
+
+  const vinculadas = new Set((user.empresasPermitidas || []).map(e => e.id));
+  const box = document.getElementById('eu_empresas');
+  const empresas = (empresasCadastradas || []).filter(e => e.ativo !== false || vinculadas.has(e.id));
+  box.innerHTML = empresas.length ? empresas.map(e => `
+    <label style="display:flex;align-items:center;gap:8px;font-weight:500;text-transform:none;letter-spacing:0;">
+      <input type="checkbox" class="eu_empresa_check" value="${escapeHtml(e.id)}" ${vinculadas.has(e.id) ? 'checked' : ''} style="width:auto;">
+      <span>${escapeHtml(e.nome_fantasia || e.razao_social || e.codigo)} (${escapeHtml(e.codigo || '')})${e.ativo === false ? ' — inativa' : ''}</span>
+    </label>`).join('') : '<span class="hint">Nenhuma empresa disponível.</span>';
+
+  const isSelf = currentUser?.id === user.id;
+  const statusBtn = document.getElementById('eu_statusBtn');
+  const deleteBtn = document.getElementById('eu_deleteBtn');
+  statusBtn.textContent = user.active ? 'Desativar' : 'Reativar';
+  statusBtn.className = user.active ? 'btn warning' : 'btn success';
+  statusBtn.disabled = isSelf;
+  deleteBtn.disabled = isSelf;
+  if(isSelf){
+    statusBtn.title = 'Você não pode desativar sua própria conta.';
+    deleteBtn.title = 'Você não pode excluir sua própria conta.';
+  }else{
+    statusBtn.title = '';
+    deleteBtn.title = '';
+  }
+  openModal('modalEditarUsuario');
+}
+
+async function chamarGerenciarUsuario(body){
+  const { data: sessionData, error: sessionError } = await sb.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+  if(sessionError || !accessToken) throw new Error('Sua sessão expirou. Saia e entre novamente no sistema.');
+
+  const { data, error } = await sb.functions.invoke('gerenciar-usuario', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body
+  });
+  if(error){
+    let msg = error.message || 'Erro ao chamar a função gerenciar-usuario.';
+    try{
+      if(error.context && typeof error.context.json === 'function'){
+        const details = await error.context.json();
+        if(details?.error) msg = details.error;
+      }
+    }catch(_){ }
+    throw new Error(msg);
+  }
+  if(data?.error) throw new Error(data.error);
+  return data;
+}
+
+async function salvarEdicaoUsuario(){
+  const user = usuariosCarregados.find(u => u.id === editingUsuarioId);
+  if(!user) return;
+  const full_name = document.getElementById('eu_full_name').value.trim();
+  const username = document.getElementById('eu_username').value.trim().toLowerCase();
+  const permission = document.getElementById('eu_permission').value;
+  const empresa_ids = [...document.querySelectorAll('.eu_empresa_check:checked')].map(el => el.value);
+  if(!full_name || !username){ showNotification('Preencha nome e usuário.', 'warning'); return; }
+  if(empresa_ids.length === 0){ showNotification('Selecione pelo menos uma empresa.', 'warning'); return; }
+  const btn = document.getElementById('eu_saveBtn');
+  btn.disabled = true; const original = btn.textContent; btn.textContent = 'Salvando...';
+  try{
+    await chamarGerenciarUsuario({ acao:'editar', user_id:user.id, full_name, username, permission, empresa_ids });
+    closeModal('modalEditarUsuario');
+    showNotification('Usuário atualizado com sucesso!', 'success');
+    await loadUsers();
+  }catch(e){
+    console.error('Erro ao editar usuário:', e);
+    showNotification('Erro ao editar usuário: ' + (e.message || e), 'error', 6000);
+  }finally{ btn.disabled = false; btn.textContent = original; }
+}
+
+async function alternarStatusUsuario(){
+  const user = usuariosCarregados.find(u => u.id === editingUsuarioId);
+  if(!user || currentUser?.id === user.id) return;
+  const acao = user.active ? 'desativar' : 'ativar';
+  const verbo = user.active ? 'desativar' : 'reativar';
+  if(!confirm(`Deseja realmente ${verbo} o usuário ${user.full_name || user.username}?`)) return;
+  try{
+    await chamarGerenciarUsuario({ acao, user_id:user.id });
+    closeModal('modalEditarUsuario');
+    showNotification(`Usuário ${user.active ? 'desativado' : 'reativado'} com sucesso!`, 'success');
+    await loadUsers();
+  }catch(e){
+    console.error('Erro ao alterar status do usuário:', e);
+    showNotification('Erro ao alterar status: ' + (e.message || e), 'error', 6000);
+  }
+}
+
+async function gerenciarUsuarioAcao(acao){
+  const user = usuariosCarregados.find(u => u.id === editingUsuarioId);
+  if(!user || acao !== 'excluir' || currentUser?.id === user.id) return;
+  const nome = user.full_name || user.username;
+  if(!confirm(`ATENÇÃO: excluir ${nome} removerá permanentemente a conta de autenticação e seus vínculos. Deseja continuar?`)) return;
+  if(!confirm('Esta exclusão é permanente. Confirma novamente?')) return;
+  try{
+    await chamarGerenciarUsuario({ acao:'excluir', user_id:user.id });
+    closeModal('modalEditarUsuario');
+    showNotification('Usuário excluído permanentemente.', 'success');
+    await loadUsers();
+  }catch(e){
+    console.error('Erro ao excluir usuário:', e);
+    showNotification('Erro ao excluir usuário: ' + (e.message || e), 'error', 6000);
+  }
 }
 
 async function handleLogin(event){
