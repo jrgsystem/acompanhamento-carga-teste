@@ -531,9 +531,20 @@
     
     <div class="panel pedido-selector">
       <h3>📦 Selecionar Pedido</h3>
-      <select id="checklistPedidoSelect" onchange="loadChecklistForPedido()">
-        <option value="">Selecione um pedido para gerenciar documentos...</option>
-      </select>
+      <div class="form-grid">
+        <div>
+          <label>Empresa</label>
+          <select id="checklistEmpresaSelect" onchange="handleChecklistEmpresaChange()">
+            <option value="">Selecione uma empresa...</option>
+          </select>
+        </div>
+        <div>
+          <label>Pedido</label>
+          <select id="checklistPedidoSelect" onchange="loadChecklistForPedido()" disabled>
+            <option value="">Selecione primeiro uma empresa...</option>
+          </select>
+        </div>
+      </div>
       <div class="export-buttons" id="checklistExportButtons" style="display:none; margin-top:12px;">
         <button class="btn secondary" onclick="exportChecklistToExcel()">📊 Exportar Excel</button>
         <button class="btn secondary" onclick="exportChecklistToPDF()">📄 Exportar PDF</button>
@@ -610,7 +621,10 @@
     <div class="section-title"><h2>Gerar Mensagem de Status</h2><span class="hint">Texto pronto pra compartilhar com quem acompanha o processo</span></div>
     <div class="panel">
       <h3>📤 Status de um pedido específico</h3>
-      <div class="form-grid"><div class="full"><label>Selecione o pedido</label><select id="msgPedidoSelect" onchange="renderMensagemPedido()"></select></div></div>
+      <div class="form-grid">
+        <div><label>Empresa</label><select id="msgEmpresaSelect" onchange="handleMsgEmpresaChange()"><option value="">Selecione uma empresa...</option></select></div>
+        <div><label>Pedido</label><select id="msgPedidoSelect" onchange="renderMensagemPedido()" disabled><option value="">Selecione primeiro uma empresa...</option></select></div>
+      </div>
       <div style="margin-top:14px;">
         <textarea id="mensagemOrder" readonly></textarea>
         <div style="display:flex; gap:10px; margin-top:12px;"><button class="btn" onclick="copiarMensagemOrder()">📋 Copiar mensagem</button></div>
@@ -1626,12 +1640,45 @@ function renderResumo(){
 
 // ==================== MENSAGEM POR PEDIDO ====================
 function refreshMsgPedidoSelect(){
-  const sel = document.getElementById('msgPedidoSelect');
-  const current = sel.value;
-  const list = pedidos.slice().sort((a,b)=>a.numero.localeCompare(b.numero));
-  sel.innerHTML = '<option value="">Selecione um pedido...</option>' + list.map(p=>`<option value="${p.id}">${p.numero} — ${empresaLabel(p.empresa)}</option>`).join('');
-  if(current && pedidos.some(p=>p.id===current)) sel.value = current;
+  const empresaSel = document.getElementById('msgEmpresaSelect');
+  const pedidoSel = document.getElementById('msgPedidoSelect');
+  if(!empresaSel || !pedidoSel) return;
+
+  const currentEmpresa = empresaSel.value;
+  const currentPedido = pedidoSel.value;
+  const empresasComPedidos = empresasCadastradas
+    .filter(e => pedidos.some(p => p.empresa_id === e.id || p.empresa === e.codigo))
+    .sort((a,b) => empresaLabel(a.codigo).localeCompare(empresaLabel(b.codigo)));
+
+  empresaSel.innerHTML = '<option value="">Selecione uma empresa...</option>' +
+    empresasComPedidos.map(e => `<option value="${e.id}">${empresaLabel(e.codigo)}</option>`).join('');
+
+  if(currentEmpresa && empresasComPedidos.some(e => e.id === currentEmpresa)) empresaSel.value = currentEmpresa;
+
+  const empresaId = empresaSel.value;
+  if(!empresaId){
+    pedidoSel.disabled = true;
+    pedidoSel.innerHTML = '<option value="">Selecione primeiro uma empresa...</option>';
+    renderMensagemPedido();
+    return;
+  }
+
+  const empresa = empresasCadastradas.find(e => e.id === empresaId);
+  const list = pedidos
+    .filter(p => p.empresa_id === empresaId || (empresa && p.empresa === empresa.codigo))
+    .slice().sort((a,b)=>a.numero.localeCompare(b.numero));
+
+  pedidoSel.disabled = false;
+  pedidoSel.innerHTML = '<option value="">Selecione um pedido...</option>' +
+    list.map(p=>`<option value="${p.id}">${p.numero}</option>`).join('');
+  if(currentPedido && list.some(p=>p.id===currentPedido)) pedidoSel.value = currentPedido;
   renderMensagemPedido();
+}
+
+function handleMsgEmpresaChange(){
+  const pedidoSel = document.getElementById('msgPedidoSelect');
+  if(pedidoSel) pedidoSel.value = '';
+  refreshMsgPedidoSelect();
 }
 
 function statusStepText(p){
@@ -2175,11 +2222,55 @@ function renderDeadlineAlerts(){
 
 // ==================== CHECKLIST DE DOCUMENTOS ====================
 function refreshChecklistPedidoSelect(){
-  const sel = document.getElementById('checklistPedidoSelect');
-  const current = sel.value;
-  const list = pedidos.slice().sort((a,b)=>a.numero.localeCompare(b.numero));
-  sel.innerHTML = '<option value="">Selecione um pedido para gerenciar documentos...</option>' + list.map(p=>`<option value="${p.id}">${p.numero} — ${empresaLabel(p.empresa)}</option>`).join('');
-  if(current && pedidos.some(p=>p.id===current)) sel.value = current;
+  const empresaSel = document.getElementById('checklistEmpresaSelect');
+  const pedidoSel = document.getElementById('checklistPedidoSelect');
+  if(!empresaSel || !pedidoSel) return;
+
+  const currentEmpresa = empresaSel.value;
+  const currentPedido = pedidoSel.value || currentChecklistPedido || '';
+  const empresasComPedidos = empresasCadastradas
+    .filter(e => pedidos.some(p => p.empresa_id === e.id || p.empresa === e.codigo))
+    .sort((a,b) => empresaLabel(a.codigo).localeCompare(empresaLabel(b.codigo)));
+
+  empresaSel.innerHTML = '<option value="">Selecione uma empresa...</option>' +
+    empresasComPedidos.map(e => `<option value="${e.id}">${empresaLabel(e.codigo)}</option>`).join('');
+
+  let empresaId = currentEmpresa;
+  if(!empresaId && currentPedido){
+    const pedidoAtual = pedidos.find(p => p.id === currentPedido);
+    if(pedidoAtual){
+      const empresaAtual = empresasCadastradas.find(e => e.id === pedidoAtual.empresa_id || e.codigo === pedidoAtual.empresa);
+      empresaId = empresaAtual?.id || '';
+    }
+  }
+  if(empresaId && empresasComPedidos.some(e => e.id === empresaId)) empresaSel.value = empresaId;
+
+  empresaId = empresaSel.value;
+  if(!empresaId){
+    pedidoSel.disabled = true;
+    pedidoSel.innerHTML = '<option value="">Selecione primeiro uma empresa...</option>';
+    return;
+  }
+
+  const empresa = empresasCadastradas.find(e => e.id === empresaId);
+  const list = pedidos
+    .filter(p => p.empresa_id === empresaId || (empresa && p.empresa === empresa.codigo))
+    .slice().sort((a,b)=>a.numero.localeCompare(b.numero));
+
+  pedidoSel.disabled = false;
+  pedidoSel.innerHTML = '<option value="">Selecione um pedido para gerenciar documentos...</option>' +
+    list.map(p=>`<option value="${p.id}">${p.numero}</option>`).join('');
+  if(currentPedido && list.some(p=>p.id===currentPedido)) pedidoSel.value = currentPedido;
+}
+
+function handleChecklistEmpresaChange(){
+  currentChecklistPedido = null;
+  const pedidoSel = document.getElementById('checklistPedidoSelect');
+  if(pedidoSel) pedidoSel.value = '';
+  document.getElementById('checklistContainer').style.display = 'none';
+  document.getElementById('noPedidoSelected').style.display = 'block';
+  document.getElementById('checklistExportButtons').style.display = 'none';
+  refreshChecklistPedidoSelect();
 }
 
 async function loadChecklistForPedido(){
