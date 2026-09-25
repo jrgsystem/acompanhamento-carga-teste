@@ -664,7 +664,7 @@
         </div>
         <div style="display:flex; gap:8px; align-items:center;">
           <button class="btn secondary" onclick="loadUsers()">↻ Atualizar</button>
-          <button class="btn" disabled title="Será habilitado após configurarmos a criação segura no Supabase Auth">+ Novo usuário</button>
+          <button class="btn" onclick="openNovoUsuarioModal()">+ Novo usuário</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -676,6 +676,28 @@
     </div>
   </section>
 </main>
+
+<!-- ===================== MODAL: NOVO USUÁRIO ===================== -->
+<div class="modal-overlay" id="modalNovoUsuario">
+  <div class="modal">
+    <div class="modal-head"><h3>Novo usuário</h3><button class="modal-close" onclick="closeModal('modalNovoUsuario')">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div><label>Nome completo *</label><input id="u_full_name" autocomplete="off"></div>
+        <div><label>E-mail *</label><input id="u_email" type="email" autocomplete="off" placeholder="usuario@empresa.com.br"></div>
+        <div><label>Usuário *</label><input id="u_username" autocomplete="off" placeholder="ex.: anapaula"></div>
+        <div><label>Senha inicial *</label><input id="u_password" type="password" autocomplete="new-password" minlength="8" placeholder="Mínimo de 8 caracteres"></div>
+        <div><label>Permissão *</label><select id="u_permission"><option value="viewer">Visualizador</option><option value="editor">Editor</option><option value="admin">Admin</option></select></div>
+        <div><label>Empresas permitidas *</label><div id="u_empresas" style="display:grid;gap:8px;padding:10px 0;"></div></div>
+      </div>
+      <div class="hint" style="margin-top:10px;">O e-mail será confirmado administrativamente. A senha fica somente no Supabase Auth.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeModal('modalNovoUsuario')">Cancelar</button>
+      <button class="btn" id="btnSalvarNovoUsuario" onclick="criarNovoUsuario()">Criar usuário</button>
+    </div>
+  </div>
+</div>
 
 <footer>Painel de controle interno · Real Comércio (RLC) & JR Rodrigues Variedades (JRV) · dados salvos no Supabase</footer>
 
@@ -2642,6 +2664,86 @@ function exportChecklistToPDF(){
 // ===================== GERENCIAMENTO DE USUÁRIOS ====================
 // A aba de usuários usa somente user_profiles + user_empresas.
 // Criação/alteração de contas do Supabase Auth será feita por backend administrativo seguro.
+function openNovoUsuarioModal(){
+  if(!hasPermission(PERMISSIONS.ADMIN)){
+    showNotification('Apenas administradores podem criar usuários', 'error');
+    return;
+  }
+  document.getElementById('u_full_name').value = '';
+  document.getElementById('u_email').value = '';
+  document.getElementById('u_username').value = '';
+  document.getElementById('u_password').value = '';
+  document.getElementById('u_permission').value = 'viewer';
+
+  const box = document.getElementById('u_empresas');
+  const ativas = (empresasCadastradas || []).filter(e => e.ativo !== false);
+  box.innerHTML = ativas.length ? ativas.map(e => `
+    <label style="display:flex;align-items:center;gap:8px;font-weight:500;text-transform:none;letter-spacing:0;">
+      <input type="checkbox" class="u_empresa_check" value="${escapeHtml(e.id)}" style="width:auto;">
+      <span>${escapeHtml(e.nome_fantasia || e.razao_social || e.codigo)} (${escapeHtml(e.codigo || '')})</span>
+    </label>`).join('') : '<span class="hint">Nenhuma empresa ativa disponível.</span>';
+  openModal('modalNovoUsuario');
+}
+
+async function criarNovoUsuario(){
+  if(!hasPermission(PERMISSIONS.ADMIN)){
+    showNotification('Apenas administradores podem criar usuários', 'error');
+    return;
+  }
+
+  const full_name = document.getElementById('u_full_name').value.trim();
+  const email = document.getElementById('u_email').value.trim().toLowerCase();
+  const username = document.getElementById('u_username').value.trim().toLowerCase();
+  const password = document.getElementById('u_password').value;
+  const permission = document.getElementById('u_permission').value;
+  const empresa_ids = [...document.querySelectorAll('.u_empresa_check:checked')].map(el => el.value);
+
+  if(!full_name || !email || !username || !password){
+    showNotification('Preencha nome, e-mail, usuário e senha inicial.', 'warning');
+    return;
+  }
+  if(password.length < 8){
+    showNotification('A senha inicial deve ter pelo menos 8 caracteres.', 'warning');
+    return;
+  }
+  if(empresa_ids.length === 0){
+    showNotification('Selecione pelo menos uma empresa.', 'warning');
+    return;
+  }
+
+  const btn = document.getElementById('btnSalvarNovoUsuario');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Criando...';
+
+  try{
+    const { data, error } = await sb.functions.invoke('criar-usuario', {
+      body: { email, password, username, full_name, permission, empresa_ids }
+    });
+    if(error){
+      let msg = error.message || 'Erro ao chamar a função criar-usuario.';
+      try{
+        if(error.context && typeof error.context.json === 'function'){
+          const details = await error.context.json();
+          if(details?.error) msg = details.error;
+        }
+      }catch(_){ }
+      throw new Error(msg);
+    }
+    if(data?.error) throw new Error(data.error);
+
+    closeModal('modalNovoUsuario');
+    showNotification('Usuário criado com sucesso!', 'success');
+    await loadUsers();
+  }catch(e){
+    console.error('Erro ao criar usuário:', e);
+    showNotification('Erro ao criar usuário: ' + (e.message || e), 'error', 6000);
+  }finally{
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
 async function loadUsers(){
   if(!hasPermission(PERMISSIONS.ADMIN)){
     showNotification('Apenas administradores podem gerenciar usuários', 'error');
