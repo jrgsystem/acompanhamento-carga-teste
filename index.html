@@ -1189,11 +1189,27 @@ async function loadAll(){
   }
 }
 
-async function logActivity(texto){
+async function logActivity(texto, empresaId){
   try{
-    await sb.from('activity_log').insert([{ texto }]);
-    activityLog.unshift({ ts: Date.now(), texto });
-  }catch(e){ console.error('Erro ao registrar atividade', e); }
+    if(!empresaId){
+      console.error('Empresa não informada ao registrar atividade:', texto);
+      return;
+    }
+
+    const { error } = await sb
+      .from('activity_log')
+      .insert([{ texto, empresa_id: empresaId }]);
+
+    if(error) throw error;
+
+    activityLog.unshift({
+      ts: Date.now(),
+      texto,
+      empresa_id: empresaId
+    });
+  }catch(e){
+    console.error('Erro ao registrar atividade', e);
+  }
 }
 
 // ==================== NAV ====================
@@ -1528,14 +1544,14 @@ async function savePedido(){
       const { error } = await sb.from('pedidos').update(pedidoToRow(data)).eq('id', editingPedidoId);
       if(error) throw error;
       if(anterior.status !== data.status){
-        await logActivity(`Pedido ${data.numero} (${empresaLabel(cod)}) mudou de status: "${anterior.status}" → "${data.status}"`);
+        await logActivity(`Pedido ${data.numero} (${empresaLabel(cod)}) mudou de status: "${anterior.status}" → "${data.status}"`, empresaId);
       } else {
-        await logActivity(`Pedido ${data.numero} (${empresaLabel(cod)}) foi atualizado`);
+        await logActivity(`Pedido ${data.numero} (${empresaLabel(cod)}) foi atualizado`, empresaId);
       }
     } else {
       const { error } = await sb.from('pedidos').insert([pedidoToRow(data)]);
       if(error) throw error;
-      await logActivity(`Novo pedido cadastrado: ${data.numero} — ${empresaLabel(cod)}`);
+      await logActivity(`Novo pedido cadastrado: ${data.numero} — ${empresaLabel(cod)}`, empresaId);
     }
     await loadAll();
     closeModal('modalPedido');
@@ -1554,7 +1570,7 @@ async function deletePedido(){
   try{
     const { error } = await sb.from('pedidos').delete().eq('id', editingPedidoId);
     if(error) throw error;
-    if(p) await logActivity(`Pedido ${p.numero} foi excluído`);
+    if(p) await logActivity(`Pedido ${p.numero} foi excluído`, p.empresa_id);
     await loadAll();
     closeModal('modalPedido');
   }catch(e){
