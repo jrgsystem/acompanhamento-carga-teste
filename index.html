@@ -3282,9 +3282,59 @@ async function checkSession(){
   updateUserDisplay();
 }
 
+// Limpar completamente o estado da área de Documentos entre usuários.
+// Evita que um checklist aberto por uma sessão anterior permaneça visível
+// enquanto os dados do novo usuário ainda estão sendo carregados.
+function resetDocumentosSessionState(){
+  currentChecklistPedido = null;
+  checklistData = {};
+  loadedChecklistPedidos = new Set();
+
+  const empresaSel = document.getElementById('checklistEmpresaSelect');
+  if(empresaSel){
+    empresaSel.innerHTML = '<option value="">Selecione uma empresa...</option>';
+    empresaSel.value = '';
+  }
+
+  const pedidoSel = document.getElementById('checklistPedidoSelect');
+  if(pedidoSel){
+    pedidoSel.innerHTML = '<option value="">Selecione primeiro uma empresa...</option>';
+    pedidoSel.value = '';
+    pedidoSel.disabled = true;
+  }
+
+  const checklistContainer = document.getElementById('checklistContainer');
+  if(checklistContainer) checklistContainer.style.display = 'none';
+
+  const noPedidoSelected = document.getElementById('noPedidoSelected');
+  if(noPedidoSelected) noPedidoSelected.style.display = 'block';
+
+  const exportButtons = document.getElementById('checklistExportButtons');
+  if(exportButtons) exportButtons.style.display = 'none';
+
+  ['Comercial', 'Fiscal', 'Transporte', 'Legal'].forEach(category => {
+    const container = document.getElementById('checklist' + category);
+    if(container) container.innerHTML = '';
+
+    const progress = document.getElementById('progress' + category);
+    if(progress) progress.style.width = '0%';
+
+    const progressText = document.getElementById('progressText' + category);
+    if(progressText) progressText.textContent = '0/0 concluídos';
+  });
+
+  ['newComercialItem', 'newFiscalItem', 'newTransporteItem', 'newLegalItem'].forEach(id => {
+    const input = document.getElementById(id);
+    if(input) input.value = '';
+  });
+}
+
 // Atualizar handleLogin para salvar sessão e resetar navegação
 const originalHandleLogin = handleLogin;
 handleLogin = async function(event){
+  // Limpar qualquer checklist da sessão anterior antes de autenticar outro usuário.
+  resetDocumentosSessionState();
+
   // Resetar sessionChecked para permitir recarregamento de dados
   sessionChecked = false;
   
@@ -3321,6 +3371,9 @@ handleLogout = async function(){
 
   localStorage.removeItem('currentUser');
   sessionChecked = false;
+
+  // Remover da interface e da memória qualquer documento da sessão encerrada.
+  resetDocumentosSessionState();
   
   // Resetar navegação para aba padrão (resumo)
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
