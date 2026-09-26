@@ -3200,27 +3200,6 @@ function showLoginError(message){
   errorDiv.style.display = 'block';
 }
 
-// Verificar sessão local
-function checkSession(){
-  const savedUser = localStorage.getItem('currentUser');
-  if(savedUser){
-    try{
-      currentUser = JSON.parse(savedUser);
-      userPermissions = currentUser.permission || PERMISSIONS.VIEWER;
-      showMainApp();
-    }catch(e){
-      localStorage.removeItem('currentUser');
-    }
-  }
-}
-
-// Salvar sessão local
-function saveSession(){
-  if(currentUser){
-    localStorage.setItem('currentUser', JSON.stringify(currentUser));
-  }
-}
-
 // Verificar sessão ao carregar (sem loop)
 let sessionChecked = false;
 async function checkSession(){
