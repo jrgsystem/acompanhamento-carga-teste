@@ -2315,10 +2315,14 @@ function renderAllCategories(){
 function renderCategory(category){
   const container = document.getElementById(`checklist${category.charAt(0).toUpperCase() + category.slice(1)}`);
   const items = checklistData[currentChecklistPedido]?.[category] || [];
+  const canEditChecklist = hasPermission(PERMISSIONS.EDITOR);
+  const canManageFiles = hasPermission(PERMISSIONS.ADMIN);
   
   container.innerHTML = items.map(item => `
     <div class="checklist-item ${item.completed ? 'completed' : ''}" data-id="${item.id}">
-      <div class="checklist-checkbox ${item.completed ? 'checked' : ''}" onclick="toggleChecklistItem('${category}', '${item.id}')">
+      <div class="checklist-checkbox ${item.completed ? 'checked' : ''}"
+           ${canEditChecklist ? `onclick="toggleChecklistItem('${category}', '${item.id}')"` : ''}
+           style="${canEditChecklist ? '' : 'cursor:default;'}">
         ${item.completed ? '✓' : ''}
       </div>
       <div class="checklist-content">
@@ -2328,18 +2332,20 @@ function renderCategory(category){
             <div class="checklist-file">
               <span>📎 ${file.name}</span>
               <span class="checklist-file-actions">
-                <span class="checklist-file-download" onclick="downloadChecklistFile('${category}', '${item.id}', ${fIndex})">⬇️</span>
-                <button type="button" class="checklist-file-remove" title="Excluir este arquivo" aria-label="Excluir arquivo ${file.name}" onclick="event.stopPropagation(); removeChecklistFile('${category}', '${item.id}', ${fIndex})">× Excluir</button>
+                <span class="checklist-file-download" title="Baixar arquivo" onclick="downloadChecklistFile('${category}', '${item.id}', ${fIndex})">⬇️</span>
+                ${canManageFiles ? `<button type="button" class="checklist-file-remove" title="Excluir este arquivo" aria-label="Excluir arquivo ${file.name}" onclick="event.stopPropagation(); removeChecklistFile('${category}', '${item.id}', ${fIndex})">× Excluir</button>` : ''}
               </span>
             </div>
           `).join('')}
-          <label class="checklist-file-add" style="cursor:pointer; color:var(--river); font-size:12px;">
-            + Adicionar arquivo
-            <input type="file" style="display:none" onchange="addChecklistFile(event, '${category}', '${item.id}')">
-          </label>
+          ${canManageFiles ? `
+            <label class="checklist-file-add" style="cursor:pointer; color:var(--river); font-size:12px;">
+              + Adicionar arquivo
+              <input type="file" style="display:none" onchange="addChecklistFile(event, '${category}', '${item.id}')">
+            </label>
+          ` : ''}
         </div>
       </div>
-      <button class="btn small ghost" onclick="removeChecklistItem('${category}', '${item.id}')" style="padding:4px 8px;">🗑️</button>
+      ${canEditChecklist ? `<button class="btn small ghost" onclick="removeChecklistItem('${category}', '${item.id}')" style="padding:4px 8px;">🗑️</button>` : ''}
     </div>
   `).join('');
   
@@ -3365,6 +3371,16 @@ function updatePedidoPermissionUI(){
   if(btnNovoPedido){
     btnNovoPedido.style.display = hasPermission(PERMISSIONS.EDITOR) ? '' : 'none';
   }
+
+  // Viewer apenas visualiza o checklist. Admin e Editor podem criar/remover itens.
+  document.querySelectorAll('.add-checklist-item').forEach(el => {
+    el.style.display = hasPermission(PERMISSIONS.EDITOR) ? 'flex' : 'none';
+  });
+
+  // Re-renderiza o checklist aberto para refletir imediatamente as permissões.
+  if(currentChecklistPedido){
+    renderAllCategories();
+  }
 }
 
 // Modificar funções para verificar permissões
@@ -3424,8 +3440,8 @@ removeChecklistItem = function(category, itemId){
 
 const originalAddChecklistFile = addChecklistFile;
 addChecklistFile = function(event, category, itemId){
-  if(!hasPermission(PERMISSIONS.EDITOR)){
-    showNotification('Você não tem permissão para adicionar arquivos', 'error');
+  if(!hasPermission(PERMISSIONS.ADMIN)){
+    showNotification('Apenas administradores podem adicionar arquivos', 'error');
     return;
   }
   originalAddChecklistFile(event, category, itemId);
@@ -3433,8 +3449,8 @@ addChecklistFile = function(event, category, itemId){
 
 const originalRemoveChecklistFile = removeChecklistFile;
 removeChecklistFile = async function(category, itemId, fileIndex){
-  if(!hasPermission(PERMISSIONS.EDITOR)){
-    showNotification('Você não tem permissão para remover arquivos', 'error');
+  if(!hasPermission(PERMISSIONS.ADMIN)){
+    showNotification('Apenas administradores podem remover arquivos', 'error');
     return;
   }
   return await originalRemoveChecklistFile(category, itemId, fileIndex);
