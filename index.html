@@ -2453,8 +2453,20 @@ async function removeChecklistFile(category, itemId, fileIndex){
   try{
     // Arquivos novos ficam no Storage. Arquivos antigos em Base64 continuam compatíveis.
     if(file.storage_path){
-      const { error } = await sb.storage.from(DOCUMENTOS_BUCKET).remove([file.storage_path]);
+      const storagePath = file.storage_path;
+      const { data: removedFiles, error } = await sb.storage
+        .from(DOCUMENTOS_BUCKET)
+        .remove([storagePath]);
       if(error) throw error;
+
+      // O Storage pode responder sem erro mesmo quando nenhum objeto foi removido.
+      // Só retiramos a referência do checklist após confirmar a exclusão física.
+      const removed = Array.isArray(removedFiles) && removedFiles.some(obj =>
+        obj?.name === storagePath || obj?.name === storagePath.split('/').pop()
+      );
+      if(!removed){
+        throw new Error('O arquivo não foi confirmado como excluído do Storage. A referência foi mantida no checklist.');
+      }
     }
 
     item.files.splice(fileIndex, 1);
