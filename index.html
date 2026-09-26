@@ -1069,28 +1069,33 @@ function setConnStatus(state, msg){
   if(state==='ok') setTimeout(()=>{ el.style.display='none'; }, 1800);
 }
 
+// Retorna as empresas permitidas pela tabela user_empresas.
+// Admin continua com acesso global; para os demais, user_empresas é a única fonte de verdade.
+function getEmpresasPermitidasUsuario(){
+  if(userPermissions === PERMISSIONS.ADMIN){
+    return empresasCadastradas;
+  }
+  return Array.isArray(currentUser?.empresasPermitidas)
+    ? currentUser.empresasPermitidas
+    : [];
+}
+
 // Filtrar pedidos por empresas permitidas do usuário
 function filterPedidosByUserAccess(allPedidos){
-  // Admin vê tudo - PRIORIDADE MÁXIMA
   if(userPermissions === PERMISSIONS.ADMIN){
     return allPedidos;
   }
-  
-  // Se não há usuário, retorna tudo (fallback)
   if(!currentUser){
-    return allPedidos;
+    return [];
   }
-  
-  // Para não-admin, verifica o campo empresas
-  const userEmpresas = currentUser.empresas || EMPRESAS.AMBAS;
-  
-  // Se tem acesso a ambas, retorna tudo
-  if(userEmpresas === EMPRESAS.AMBAS){
-    return allPedidos;
-  }
-  
-  // Filtra por empresa específica
-  return allPedidos.filter(p => p.empresa === userEmpresas);
+
+  const codigosPermitidos = new Set(
+    getEmpresasPermitidasUsuario()
+      .map(empresa => empresa?.codigo)
+      .filter(Boolean)
+  );
+
+  return allPedidos.filter(p => codigosPermitidos.has(p.empresa));
 }
 
 async function loadEmpresas(){
@@ -1584,21 +1589,12 @@ function renderResumo(){
   // Determinar quais empresas mostrar baseado em permissões
   let empresasToShow = [];
   
-  if(userPermissions === PERMISSIONS.ADMIN || (currentUser?.empresas === EMPRESAS.AMBAS)){
-    // Admin ou AMBAS vêem todas as empresas
+  if(userPermissions === PERMISSIONS.ADMIN){
     empresasToShow = empresasCadastradas;
   } else {
-    // Usuário com empresa específica vê apenas sua empresa
-    const userEmpresa = currentUser?.empresas;
-    if(userEmpresa){
-      const empresa = empresasCadastradas.find(e => e.codigo === userEmpresa);
-      if(empresa){
-        empresasToShow = [empresa];
-      }
-      // Se empresa não encontrada, empresasToShow fica vazio (fallback seguro)
-    }
+    empresasToShow = getEmpresasPermitidasUsuario();
   }
-  
+
   // Gerar cards de empresas dinamicamente
   const empresaCards = empresasToShow.map(empresa => {
     const count = pedidos.filter(p => p.empresa === empresa.codigo).length;
@@ -2046,18 +2042,10 @@ function renderCharts(){
     }
   } else {
     // Sem filtro - depende de permissões
-    if(userPermissions === PERMISSIONS.ADMIN || (currentUser?.empresas === EMPRESAS.AMBAS)){
-      // Admin ou AMBAS veem todas as empresas
+    if(userPermissions === PERMISSIONS.ADMIN){
       empresasComDados = empresasCadastradas;
     } else {
-      // Usuário com empresa específica vê apenas sua empresa
-      const userEmpresa = currentUser?.empresas;
-      if(userEmpresa){
-        const empresa = empresasCadastradas.find(e => e.codigo === userEmpresa);
-        if(empresa){
-          empresasComDados = [empresa];
-        }
-      }
+      empresasComDados = getEmpresasPermitidasUsuario();
     }
   }
 
@@ -3172,43 +3160,32 @@ function updateUserDisplay(){
 function updateChartEmpresaFilter(){
   const filter = document.getElementById('chartEmpresaFilter');
   if(!filter) return;
-  
-  // Preservar valor atualmente selecionado
+
   const currentValue = filter.value;
-  
-  const userEmpresas = currentUser?.empresas || EMPRESAS.AMBAS;
-  
-  // Admin ou usuários com acesso a ambas veem todas as opções
-  if(userPermissions === PERMISSIONS.ADMIN || userEmpresas === EMPRESAS.AMBAS){
-    const options = empresasCadastradas.map(empresa => 
+  const empresasPermitidas = getEmpresasPermitidasUsuario();
+
+  if(userPermissions === PERMISSIONS.ADMIN){
+    const options = empresasCadastradas.map(empresa =>
       `<option value="${empresa.codigo}">${empresaLabel(empresa.codigo)}</option>`
     ).join('');
     filter.innerHTML = '<option value="">Todas (Geral)</option>' + options;
   } else {
-    // Usuário com empresa específica - buscar em empresasCadastradas
-    const empresaUsuario = empresasCadastradas.find(e => e.codigo === userEmpresas);
-    
-    if(empresaUsuario){
-      // Empresa encontrada - mostrar apenas essa empresa
-      const optionLabel = empresaLabel(empresaUsuario.codigo);
-      filter.innerHTML = `
-        <option value="">Todas (${empresaUsuario.codigo})</option>
-        <option value="${empresaUsuario.codigo}">${optionLabel}</option>
-      `;
+    const options = empresasPermitidas.map(empresa =>
+      `<option value="${empresa.codigo}">${empresaLabel(empresa.codigo)}</option>`
+    ).join('');
+
+    if(empresasPermitidas.length === 1){
+      filter.innerHTML =
+        `<option value="">Todas (${empresasPermitidas[0].codigo})</option>` + options;
+    } else if(empresasPermitidas.length > 1){
+      filter.innerHTML = '<option value="">Todas (Permitidas)</option>' + options;
     } else {
-      // Empresa não encontrada em empresasCadastradas - comportamento seguro
-      // Mostrar apenas opção "Todas" sem opções específicas
-      filter.innerHTML = '<option value="">Todas</option>';
+      filter.innerHTML = '<option value="">Nenhuma empresa disponível</option>';
     }
   }
-  
-  // Restaurar valor selecionado se ainda existir nas opções reconstruídas
-  if(currentValue){
-    const optionExists = Array.from(filter.options).some(option => option.value === currentValue);
-    if(optionExists){
-      filter.value = currentValue;
-    }
-  }
+
+  const optionExists = Array.from(filter.options).some(opt => opt.value === currentValue);
+  filter.value = optionExists ? currentValue : '';
 }
 
 function showMainApp(){
