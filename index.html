@@ -215,8 +215,8 @@
   .checklist-file-actions{ display:flex; gap:8px; }
   .checklist-file-download{ cursor:pointer; color:var(--river); }
   .checklist-file-download:hover{ color:var(--success); }
-  .checklist-file-remove{ cursor:pointer; color:var(--stamp); }
-  .checklist-file-remove:hover{ color:var(--danger); }
+  .checklist-file-remove{ cursor:pointer; color:var(--stamp); background:transparent; border:1px solid transparent; border-radius:3px; padding:2px 6px; font-size:12px; font-weight:700; line-height:1.2; }
+  .checklist-file-remove:hover{ color:var(--danger); border-color:var(--stamp); background:rgba(168,64,44,0.06); }
   .checklist-file-add{ display:inline-block; margin-top:4px; }
   .checklist-file-add:hover{ text-decoration:underline; }
   .checklist-category{ font-size:11px; color:#a39a86; text-transform:uppercase; letter-spacing:.05em; }
@@ -2329,7 +2329,7 @@ function renderCategory(category){
               <span>📎 ${file.name}</span>
               <span class="checklist-file-actions">
                 <span class="checklist-file-download" onclick="downloadChecklistFile('${category}', '${item.id}', ${fIndex})">⬇️</span>
-                <span class="checklist-file-remove" onclick="removeChecklistFile('${category}', '${item.id}', ${fIndex})">×</span>
+                <button type="button" class="checklist-file-remove" title="Excluir este arquivo" aria-label="Excluir arquivo ${file.name}" onclick="event.stopPropagation(); removeChecklistFile('${category}', '${item.id}', ${fIndex})">× Excluir</button>
               </span>
             </div>
           `).join('')}
@@ -2443,36 +2443,54 @@ async function addChecklistFile(event, category, itemId){
 }
 
 async function removeChecklistFile(category, itemId, fileIndex){
-  if(!confirm('Remover este arquivo?')) return;
+  if(!currentChecklistPedido){
+    showNotification('Nenhum pedido selecionado', 'error');
+    return;
+  }
 
   const items = checklistData[currentChecklistPedido]?.[category];
   const item = items?.find(i => i.id === itemId);
   const file = item?.files?.[fileIndex];
-  if(!file) return;
+  if(!file){
+    showNotification('Arquivo não encontrado no checklist', 'error');
+    return;
+  }
+
+  if(!confirm(`Excluir permanentemente o arquivo "${file.name}"?`)) return;
 
   try{
-    // Arquivos novos ficam no Storage. Arquivos antigos em Base64 continuam compatíveis.
-    if(file.storage_path){
-      const storagePath = file.storage_path;
-      const { data: removedFiles, error } = await sb.storage
-        .from(DOCUMENTOS_BUCKET)
-        .remove([storagePath]);
-      if(error) throw error;
-
-      // O Storage pode responder sem erro mesmo quando nenhum objeto foi removido.
-      // Só retiramos a referência do checklist após confirmar a exclusão física.
-      const removed = Array.isArray(removedFiles) && removedFiles.some(obj =>
-        obj?.name === storagePath || obj?.name === storagePath.split('/').pop()
-      );
-      if(!removed){
-        throw new Error('O arquivo não foi confirmado como excluído do Storage. A referência foi mantida no checklist.');
-      }
+    // Arquivos atuais devem possuir storage_path. Sem esse caminho não é seguro
+    // apagar apenas a referência, pois isso deixaria um arquivo órfão no Storage.
+    if(!file.storage_path){
+      throw new Error('Este arquivo não possui o caminho do Storage. A referência foi mantida para evitar arquivo órfão.');
     }
 
+    const storagePath = file.storage_path;
+    console.info('[Documentos] Excluindo do Storage:', storagePath);
+
+    const { data: removedFiles, error: storageError } = await sb.storage
+      .from(DOCUMENTOS_BUCKET)
+      .remove([storagePath]);
+
+    if(storageError) throw storageError;
+
+    console.info('[Documentos] Resposta da exclusão no Storage:', removedFiles);
+
+    // Só depois da chamada ao Storage ter sido concluída removemos a referência
+    // do checklist e persistimos o JSON atualizado em pedidos.
     item.files.splice(fileIndex, 1);
-    await saveChecklistToSupabase(true);
+
+    try{
+      await saveChecklistToSupabase(true);
+    }catch(saveError){
+      // A exclusão física já ocorreu; recarregar o checklist evita manter na tela
+      // uma referência que aponta para um arquivo que não existe mais.
+      loadedChecklistPedidos.delete(currentChecklistPedido);
+      throw new Error('O arquivo foi excluído do Storage, mas não foi possível atualizar o checklist: ' + (saveError.message || saveError));
+    }
+
     renderCategory(category);
-    showNotification('Arquivo removido', 'info');
+    showNotification(`Arquivo "${file.name}" excluído com sucesso`, 'success');
   }catch(e){
     console.error('Erro ao remover arquivo:', e);
     showNotification('Erro ao remover arquivo: ' + (e.message || e), 'error');
@@ -3414,12 +3432,12 @@ addChecklistFile = function(event, category, itemId){
 };
 
 const originalRemoveChecklistFile = removeChecklistFile;
-removeChecklistFile = function(category, itemId, fileIndex){
+removeChecklistFile = async function(category, itemId, fileIndex){
   if(!hasPermission(PERMISSIONS.EDITOR)){
     showNotification('Você não tem permissão para remover arquivos', 'error');
     return;
   }
-  originalRemoveChecklistFile(category, itemId, fileIndex);
+  return await originalRemoveChecklistFile(category, itemId, fileIndex);
 };
 
 </script>
