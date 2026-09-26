@@ -928,6 +928,11 @@ function escapeHtml(value){
     .replace(/\"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+function safeColor(value){
+  const color = String(value || '');
+  return /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#3d6b8c';
+}
+
 function empresaFromNumero(numero){
   if(!numero) return '';
   
@@ -989,8 +994,8 @@ function fornecedorLabel(fornecedorId){
 
 function empresaBadge(empresa){
   const empresaData = empresasCadastradas.find(e => e.codigo === empresa);
-  const cor = empresaData?.cor_primaria || '#3d6b8c';
-  return `<span class="company-badge" style="background:${cor}">${empresa}</span>`;
+  const cor = safeColor(empresaData?.cor_primaria);
+  return `<span class="company-badge" style="background:${cor}">${escapeHtml(empresa)}</span>`;
 }
 
 async function loadUserEmpresas(userId){
@@ -1146,7 +1151,7 @@ function populateFilterEmpresa(){
   
   // Gerar opções dinamicamente
   const options = empresasCadastradas.map(empresa => 
-    `<option value="${empresa.codigo}">${empresaLabel(empresa.codigo)}</option>`
+    `<option value="${escapeHtml(empresa.codigo)}">${escapeHtml(empresaLabel(empresa.codigo))}</option>`
   ).join('');
   
   filter.innerHTML = '<option value="">Todas</option>' + options;
@@ -1273,7 +1278,7 @@ function populatePedidoSelects(){
     empresaSelect.innerHTML =
       '<option value="">Selecione a empresa...</option>' +
       empresasCadastradas.filter(e => e.ativo !== false).map(e =>
-        `<option value="${e.id}">${empresaLabel(e.codigo)}</option>`
+        `<option value="${escapeHtml(e.id)}">${escapeHtml(empresaLabel(e.codigo))}</option>`
       ).join('') +
       (userPermissions === PERMISSIONS.ADMIN
         ? '<option value="__NOVA_EMPRESA__">+ Cadastrar nova empresa...</option>'
@@ -1285,7 +1290,7 @@ function populatePedidoSelects(){
       '<option value="">Selecione o fornecedor...</option>' +
       fornecedoresCadastrados.filter(f => f.ativo !== false).map(f => {
         const texto = f.nome_fantasia || f.razao_social || f.codigo;
-        return `<option value="${f.id}">${texto}</option>`;
+        return `<option value="${escapeHtml(f.id)}">${escapeHtml(texto)}</option>`;
       }).join('') +
       (userPermissions === PERMISSIONS.ADMIN
         ? '<option value="__NOVO_FORNECEDOR__">+ Cadastrar novo fornecedor...</option>'
@@ -1449,10 +1454,10 @@ function renderCadastrosAdmin(){
   const eb = document.getElementById('empresasAdminBody');
   const fb = document.getElementById('fornecedoresAdminBody');
   if(eb){
-    eb.innerHTML = empresasCadastradas.length ? empresasCadastradas.map(e => `<tr><td class="num">${e.codigo || '—'}</td><td>${e.nome_fantasia || '—'}</td><td>${e.razao_social || '—'}</td><td><span class="stamp-badge ${e.ativo !== false ? 'status-finalizado' : 'status-cancelado'}">${e.ativo !== false ? 'ATIVA' : 'INATIVA'}</span></td><td class="actions-cell"><button class="btn small secondary" onclick="openEmpresaModal('${e.id}')">Editar</button><button class="btn small ${e.ativo !== false ? 'danger' : 'secondary'}" onclick="toggleEmpresaAtiva('${e.id}', ${e.ativo !== false})">${e.ativo !== false ? 'Desativar' : 'Reativar'}</button></td></tr>`).join('') : '<tr class="empty-row"><td colspan="5">Nenhuma empresa cadastrada.</td></tr>';
+    eb.innerHTML = empresasCadastradas.length ? empresasCadastradas.map(e => `<tr><td class="num">${escapeHtml(e.codigo || '—')}</td><td>${escapeHtml(e.nome_fantasia || '—')}</td><td>${escapeHtml(e.razao_social || '—')}</td><td><span class="stamp-badge ${e.ativo !== false ? 'status-finalizado' : 'status-cancelado'}">${e.ativo !== false ? 'ATIVA' : 'INATIVA'}</span></td><td class="actions-cell"><button class="btn small secondary" onclick="openEmpresaModal('${e.id}')">Editar</button><button class="btn small ${e.ativo !== false ? 'danger' : 'secondary'}" onclick="toggleEmpresaAtiva('${e.id}', ${e.ativo !== false})">${e.ativo !== false ? 'Desativar' : 'Reativar'}</button></td></tr>`).join('') : '<tr class="empty-row"><td colspan="5">Nenhuma empresa cadastrada.</td></tr>';
   }
   if(fb){
-    fb.innerHTML = fornecedoresCadastrados.length ? fornecedoresCadastrados.map(f => `<tr><td class="num">${f.codigo || '—'}</td><td>${f.nome_fantasia || '—'}</td><td>${f.razao_social || '—'}</td><td><span class="stamp-badge ${f.ativo !== false ? 'status-finalizado' : 'status-cancelado'}">${f.ativo !== false ? 'ATIVO' : 'INATIVO'}</span></td><td class="actions-cell"><button class="btn small secondary" onclick="openFornecedorModal('${f.id}')">Editar</button><button class="btn small ${f.ativo !== false ? 'danger' : 'secondary'}" onclick="toggleFornecedorAtivo('${f.id}', ${f.ativo !== false})">${f.ativo !== false ? 'Desativar' : 'Reativar'}</button></td></tr>`).join('') : '<tr class="empty-row"><td colspan="5">Nenhum fornecedor cadastrado.</td></tr>';
+    fb.innerHTML = fornecedoresCadastrados.length ? fornecedoresCadastrados.map(f => `<tr><td class="num">${escapeHtml(f.codigo || '—')}</td><td>${escapeHtml(f.nome_fantasia || '—')}</td><td>${escapeHtml(f.razao_social || '—')}</td><td><span class="stamp-badge ${f.ativo !== false ? 'status-finalizado' : 'status-cancelado'}">${f.ativo !== false ? 'ATIVO' : 'INATIVO'}</span></td><td class="actions-cell"><button class="btn small secondary" onclick="openFornecedorModal('${f.id}')">Editar</button><button class="btn small ${f.ativo !== false ? 'danger' : 'secondary'}" onclick="toggleFornecedorAtivo('${f.id}', ${f.ativo !== false})">${f.ativo !== false ? 'Desativar' : 'Reativar'}</button></td></tr>`).join('') : '<tr class="empty-row"><td colspan="5">Nenhum fornecedor cadastrado.</td></tr>';
   }
 }
 
@@ -1598,7 +1603,7 @@ function renderResumo(){
   // Gerar cards de empresas dinamicamente
   const empresaCards = empresasToShow.map(empresa => {
     const count = pedidos.filter(p => p.empresa === empresa.codigo).length;
-    return `<div class="stat-card"><div class="label">${empresaLabel(empresa.codigo)}</div><div class="value">${count}</div><div class="sub">pedidos cadastrados</div></div>`;
+    return `<div class="stat-card"><div class="label">${escapeHtml(empresaLabel(empresa.codigo))}</div><div class="value">${count}</div><div class="sub">pedidos cadastrados</div></div>`;
   }).join('');
   
   // Cards gerais (mantidos inalterados)
@@ -1619,11 +1624,11 @@ function renderResumo(){
   } else {
     tbody.innerHTML = emAndamento.map(p=>`
       <tr>
-        <td class="num">${p.numero}</td>
+        <td class="num">${escapeHtml(p.numero)}</td>
         <td>${empresaBadge(p.empresa)}</td>
-        <td>${fornecedorLabel(p.fornecedor_id)}</td>
-        <td><span class="stamp-badge ${STATUS_CLASS[p.status]||''}">${p.status}</span></td>
-        <td>${p.agente||'—'}</td><td>${fmtDate(p.chegadaPrev)}</td>
+        <td>${escapeHtml(fornecedorLabel(p.fornecedor_id))}</td>
+        <td><span class="stamp-badge ${STATUS_CLASS[p.status]||''}">${escapeHtml(p.status)}</span></td>
+        <td>${escapeHtml(p.agente||'—')}</td><td>${fmtDate(p.chegadaPrev)}</td>
       </tr>
     `).join('');
   }
@@ -1642,7 +1647,7 @@ function refreshMsgPedidoSelect(){
     .sort((a,b) => empresaLabel(a.codigo).localeCompare(empresaLabel(b.codigo)));
 
   empresaSel.innerHTML = '<option value="">Selecione uma empresa...</option>' +
-    empresasComPedidos.map(e => `<option value="${e.id}">${empresaLabel(e.codigo)}</option>`).join('');
+    empresasComPedidos.map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(empresaLabel(e.codigo))}</option>`).join('');
 
   if(currentEmpresa && empresasComPedidos.some(e => e.id === currentEmpresa)) empresaSel.value = currentEmpresa;
 
@@ -1661,7 +1666,7 @@ function refreshMsgPedidoSelect(){
 
   pedidoSel.disabled = false;
   pedidoSel.innerHTML = '<option value="">Selecione um pedido...</option>' +
-    list.map(p=>`<option value="${p.id}">${p.numero}</option>`).join('');
+    list.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.numero)}</option>`).join('');
   if(currentPedido && list.some(p=>p.id===currentPedido)) pedidoSel.value = currentPedido;
   renderMensagemPedido();
 }
@@ -1736,7 +1741,7 @@ function renderLogList(){
     wrap.innerHTML = `<div class="empty-state" style="padding:20px;"><p>Nenhuma alteração registrada nesse período ainda.</p></div>`;
   } else {
     wrap.innerHTML = `<div class="pending-list">` + filtered.map(l=>`
-      <div class="pending-item"><span>📦</span><span>${l.texto}<br><span class="muted" style="font-size:11px;">${new Date(l.ts).toLocaleString('pt-BR')}</span></span></div>
+      <div class="pending-item"><span>📦</span><span>${escapeHtml(l.texto)}<br><span class="muted" style="font-size:11px;">${new Date(l.ts).toLocaleString('pt-BR')}</span></span></div>
     `).join('') + `</div>`;
   }
   renderMensagemConsolidada();
@@ -1801,24 +1806,22 @@ function showNotification(message, type = 'info', duration = 3000){
   const container = document.getElementById('notificationContainer');
   const notification = document.createElement('div');
   notification.className = `notification ${type}`;
-  
   const icons = {success:'✓', warning:'⚠', error:'✕', info:'ℹ'};
-  
-  notification.innerHTML = `
-    <span>${icons[type] || 'ℹ'}</span>
-    <span>${message}</span>
-    <button class="notification-close" onclick="this.parentElement.remove()">×</button>
-  `;
-  
+  const iconSpan = document.createElement('span');
+  iconSpan.textContent = icons[type] || 'ℹ';
+  const messageSpan = document.createElement('span');
+  messageSpan.textContent = String(message ?? '');
+  const closeButton = document.createElement('button');
+  closeButton.className = 'notification-close';
+  closeButton.type = 'button';
+  closeButton.textContent = '×';
+  closeButton.addEventListener('click', () => notification.remove());
+  notification.append(iconSpan, messageSpan, closeButton);
   container.appendChild(notification);
-  
-  // Auto-dismiss individual para cada notificação
   setTimeout(() => {
     if(notification.parentElement){
       notification.style.animation = 'fadeOut 0.3s ease-out forwards';
-      setTimeout(() => {
-        if(notification.parentElement) notification.remove();
-      }, 300);
+      setTimeout(() => { if(notification.parentElement) notification.remove(); }, 300);
     }
   }, duration);
 }
@@ -1831,8 +1834,8 @@ function updateFilterOptions(){
   const agenteSelect = document.getElementById('filterAgente');
   const portoSelect = document.getElementById('filterPorto');
   
-  agenteSelect.innerHTML = '<option value="">Todos</option>' + agentes.map(a => `<option value="${a}">${a}</option>`).join('');
-  portoSelect.innerHTML = '<option value="">Todos</option>' + portos.map(p => `<option value="${p}">${p}</option>`).join('');
+  agenteSelect.innerHTML = '<option value="">Todos</option>' + agentes.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('');
+  portoSelect.innerHTML = '<option value="">Todos</option>' + portos.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
 }
 
 function clearFilters(){
@@ -1901,13 +1904,13 @@ function renderPedidosTable(){
   }
   tbody.innerHTML = list.map(p=>`
     <tr class="animate-fade-in">
-      <td class="num">${p.numero}</td>
+      <td class="num">${escapeHtml(p.numero)}</td>
       <td>${empresaBadge(p.empresa)}</td>
-      <td>${fornecedorLabel(p.fornecedor_id)}</td>
+      <td>${escapeHtml(fornecedorLabel(p.fornecedor_id))}</td>
       <td>${fmtDate(p.contrato)}</td><td>${fmtDate(p.sinal)}</td><td>${fmtDate(p.embarque)}</td>
-      <td>${p.agente||'—'}</td><td class="num">${p.bl||'—'}</td><td>${fmtDate(p.chegadaPrev)}</td>
-      <td>${fmtDate(p.atracacao)}</td><td>${p.porto||'—'}</td><td>${fmtDate(p.entrega)}</td>
-      <td><span class="stamp-badge ${STATUS_CLASS[p.status]||''}">${p.status}</span></td>
+      <td>${escapeHtml(p.agente||'—')}</td><td class="num">${escapeHtml(p.bl||'—')}</td><td>${fmtDate(p.chegadaPrev)}</td>
+      <td>${fmtDate(p.atracacao)}</td><td>${escapeHtml(p.porto||'—')}</td><td>${fmtDate(p.entrega)}</td>
+      <td><span class="stamp-badge ${STATUS_CLASS[p.status]||''}">${escapeHtml(p.status)}</span></td>
       <td class="actions-cell">${hasPermission(PERMISSIONS.EDITOR) ? `<button class="btn small secondary" onclick="openPedidoModal('${p.id}')">Editar</button>` : '—'}</td>
     </tr>
   `).join('');
@@ -2195,8 +2198,8 @@ function renderDeadlineAlerts(){
       <div class="deadline-alert ${a.type}">
         <span class="deadline-icon">${a.icon}</span>
         <div class="deadline-content">
-          <div class="deadline-title">${a.title}</div>
-          <div class="deadline-desc">${a.desc}</div>
+          <div class="deadline-title">${escapeHtml(a.title)}</div>
+          <div class="deadline-desc">${escapeHtml(a.desc)}</div>
         </div>
       </div>
     `).join('');
@@ -2216,7 +2219,7 @@ function refreshChecklistPedidoSelect(){
     .sort((a,b) => empresaLabel(a.codigo).localeCompare(empresaLabel(b.codigo)));
 
   empresaSel.innerHTML = '<option value="">Selecione uma empresa...</option>' +
-    empresasComPedidos.map(e => `<option value="${e.id}">${empresaLabel(e.codigo)}</option>`).join('');
+    empresasComPedidos.map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(empresaLabel(e.codigo))}</option>`).join('');
 
   let empresaId = currentEmpresa;
   if(!empresaId && currentPedido){
@@ -2242,7 +2245,7 @@ function refreshChecklistPedidoSelect(){
 
   pedidoSel.disabled = false;
   pedidoSel.innerHTML = '<option value="">Selecione um pedido para gerenciar documentos...</option>' +
-    list.map(p=>`<option value="${p.id}">${p.numero}</option>`).join('');
+    list.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.numero)}</option>`).join('');
   if(currentPedido && list.some(p=>p.id===currentPedido)) pedidoSel.value = currentPedido;
 }
 
@@ -2330,14 +2333,14 @@ function renderCategory(category){
         ${item.completed ? '✓' : ''}
       </div>
       <div class="checklist-content">
-        <div class="checklist-name">${item.name}</div>
+        <div class="checklist-name">${escapeHtml(item.name)}</div>
         <div class="checklist-files">
           ${(item.files || []).map((file, fIndex) => `
             <div class="checklist-file">
-              <span>📎 ${file.name}</span>
+              <span>📎 ${escapeHtml(file.name)}</span>
               <span class="checklist-file-actions">
                 <span class="checklist-file-download" title="Baixar arquivo" onclick="downloadChecklistFile('${category}', '${item.id}', ${fIndex})">⬇️</span>
-                ${canManageFiles ? `<button type="button" class="checklist-file-remove" title="Excluir este arquivo" aria-label="Excluir arquivo ${file.name}" onclick="event.stopPropagation(); removeChecklistFile('${category}', '${item.id}', ${fIndex})">× Excluir</button>` : ''}
+                ${canManageFiles ? `<button type="button" class="checklist-file-remove" title="Excluir este arquivo" aria-label="Excluir arquivo ${escapeHtml(file.name)}" onclick="event.stopPropagation(); removeChecklistFile('${category}', '${item.id}', ${fIndex})">× Excluir</button>` : ''}
               </span>
             </div>
           `).join('')}
@@ -3166,12 +3169,12 @@ function updateChartEmpresaFilter(){
 
   if(userPermissions === PERMISSIONS.ADMIN){
     const options = empresasCadastradas.map(empresa =>
-      `<option value="${empresa.codigo}">${empresaLabel(empresa.codigo)}</option>`
+      `<option value="${escapeHtml(empresa.codigo)}">${escapeHtml(empresaLabel(empresa.codigo))}</option>`
     ).join('');
     filter.innerHTML = '<option value="">Todas (Geral)</option>' + options;
   } else {
     const options = empresasPermitidas.map(empresa =>
-      `<option value="${empresa.codigo}">${empresaLabel(empresa.codigo)}</option>`
+      `<option value="${escapeHtml(empresa.codigo)}">${escapeHtml(empresaLabel(empresa.codigo))}</option>`
     ).join('');
 
     if(empresasPermitidas.length === 1){
