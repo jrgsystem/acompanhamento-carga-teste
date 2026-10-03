@@ -242,7 +242,27 @@
   /* Export buttons */
   .export-buttons{ display:flex; gap:8px; margin-bottom:16px; }
   
+  .mobile-nav-toggle{ display:none; }
+
   @media (max-width:768px){
+    .mobile-nav-toggle{
+      display:flex; align-items:center; justify-content:space-between; width:100%;
+      padding:12px 16px; border:0; border-bottom:1px solid var(--line);
+      background:var(--paper-2); color:var(--hull); font-family:'Inter',sans-serif;
+      font-size:13.5px; font-weight:700; cursor:pointer; position:sticky; top:0; z-index:11;
+    }
+    .mobile-nav-toggle .mobile-nav-icon{ font-size:18px; line-height:1; }
+    nav{
+      display:none; position:sticky; top:43px; z-index:10; padding:6px 10px 10px;
+      overflow:visible; flex-direction:column; gap:2px; box-shadow:0 6px 14px rgba(28,35,33,0.12);
+    }
+    nav.mobile-open{ display:flex; }
+    nav button{
+      width:100%; text-align:left; padding:12px 14px; border-bottom:1px solid rgba(201,187,156,.55);
+      white-space:normal;
+    }
+    nav button::after{ display:none; }
+    nav button.active{ border-bottom-color:var(--stamp); }
     .charts-container{ grid-template-columns:1fr; }
     .checklist-container{ grid-template-columns:1fr; }
     .filters-row{ flex-direction:column; align-items:stretch; }
@@ -392,6 +412,10 @@
 
 <div class="notification-container" id="notificationContainer"></div>
 
+<button type="button" class="mobile-nav-toggle" id="mobileNavToggle" aria-controls="nav" aria-expanded="false">
+  <span id="mobileNavLabel">Menu · Resumo</span>
+  <span class="mobile-nav-icon" aria-hidden="true">☰</span>
+</button>
 <nav id="nav">
   <button data-view="resumo" class="active">Resumo</button>
   <button data-view="pedidos">Pedidos</button>
@@ -1223,6 +1247,15 @@ async function logActivity(texto, empresaId){
 }
 
 // ==================== NAV ====================
+const mobileNavToggle = document.getElementById('mobileNavToggle');
+const mobileNavLabel = document.getElementById('mobileNavLabel');
+const mainNav = document.getElementById('nav');
+
+mobileNavToggle.addEventListener('click', ()=>{
+  const aberto = mainNav.classList.toggle('mobile-open');
+  mobileNavToggle.setAttribute('aria-expanded', String(aberto));
+});
+
 document.getElementById('nav').addEventListener('click', (e)=>{
   const btn = e.target.closest('button[data-view]');
   if(!btn) return;
@@ -1235,6 +1268,12 @@ document.getElementById('nav').addEventListener('click', (e)=>{
   
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
+
+  // No celular, mostra a seção ativa no botão e recolhe o menu após a escolha.
+  if(mobileNavLabel) mobileNavLabel.textContent = 'Menu · ' + btn.textContent.trim();
+  mainNav.classList.remove('mobile-open');
+  mobileNavToggle.setAttribute('aria-expanded', 'false');
+
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-' + btn.dataset.view).classList.add('active');
   
