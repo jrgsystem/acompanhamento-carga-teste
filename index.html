@@ -244,6 +244,24 @@
   
   .mobile-nav-toggle{ display:none; }
 
+  /* Pedidos em cards no celular */
+  .pedidos-mobile-list{ display:none; }
+  .pedido-mobile-card{
+    background:var(--white); border:1px solid var(--line); border-top:3px solid var(--gold);
+    border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; margin-bottom:12px;
+  }
+  .pedido-mobile-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; }
+  .pedido-mobile-num{ font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; color:var(--hull); }
+  .pedido-mobile-grid{ display:grid; grid-template-columns:1fr 1fr; gap:9px 12px; }
+  .pedido-mobile-field{ min-width:0; }
+  .pedido-mobile-label{ display:block; font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#8b8270; margin-bottom:2px; }
+  .pedido-mobile-value{ display:block; font-size:12px; color:var(--ink); overflow-wrap:anywhere; }
+  .pedido-mobile-status{ margin-top:11px; }
+  .pedido-mobile-details{ margin-top:10px; border-top:1px solid #eee3cc; padding-top:8px; }
+  .pedido-mobile-details summary{ cursor:pointer; color:var(--hull); font-size:12px; font-weight:700; padding:4px 0; }
+  .pedido-mobile-details .pedido-mobile-grid{ margin-top:9px; }
+  .pedido-mobile-actions{ display:flex; justify-content:flex-end; margin-top:10px; }
+
   @media (max-width:768px){
     .mobile-nav-toggle{
       display:flex; align-items:center; justify-content:space-between; width:100%;
@@ -263,6 +281,8 @@
     }
     nav button::after{ display:none; }
     nav button.active{ border-bottom-color:var(--stamp); }
+    #view-pedidos > .table-wrap{ display:none; }
+    .pedidos-mobile-list{ display:block; }
     .charts-container{ grid-template-columns:1fr; }
     .checklist-container{ grid-template-columns:1fr; }
     .filters-row{ flex-direction:column; align-items:stretch; }
@@ -506,6 +526,7 @@
         <tbody id="pedidosTableBody"></tbody>
       </table>
     </div>
+    <div id="pedidosMobileList" class="pedidos-mobile-list" aria-live="polite"></div>
   </section>
 
   <!-- ===================== GRÁFICOS ===================== -->
@@ -1928,6 +1949,7 @@ function applyAdvancedFilters(list){
 
 function renderPedidosTable(){
   const tbody = document.getElementById('pedidosTableBody');
+  const mobileList = document.getElementById('pedidosMobileList');
   const fEmp = document.getElementById('filterEmpresa').value;
   const fStatus = document.getElementById('filterStatus').value;
   let list = pedidos.slice().sort((a,b)=> a.numero.localeCompare(b.numero));
@@ -1939,8 +1961,10 @@ function renderPedidosTable(){
 
   if(list.length===0){
     tbody.innerHTML = `<tr class="empty-row"><td colspan="14">Nenhum pedido encontrado com os filtros atuais.</td></tr>`;
+    if(mobileList) mobileList.innerHTML = `<div class="empty-state">Nenhum pedido encontrado com os filtros atuais.</div>`;
     return;
   }
+
   tbody.innerHTML = list.map(p=>`
     <tr class="animate-fade-in">
       <td class="num">${escapeHtml(p.numero)}</td>
@@ -1953,6 +1977,49 @@ function renderPedidosTable(){
       <td class="actions-cell">${hasPermission(PERMISSIONS.EDITOR) ? `<button class="btn small secondary" onclick="openPedidoModal('${p.id}')">Editar</button>` : '—'}</td>
     </tr>
   `).join('');
+
+  if(mobileList){
+    mobileList.innerHTML = list.map(p=>`
+      <article class="pedido-mobile-card animate-fade-in">
+        <div class="pedido-mobile-head">
+          <div class="pedido-mobile-num">${escapeHtml(p.numero)}</div>
+          <div>${empresaBadge(p.empresa)}</div>
+        </div>
+        <div class="pedido-mobile-grid">
+          <div class="pedido-mobile-field">
+            <span class="pedido-mobile-label">Fornecedor</span>
+            <span class="pedido-mobile-value">${escapeHtml(fornecedorLabel(p.fornecedor_id))}</span>
+          </div>
+          <div class="pedido-mobile-field">
+            <span class="pedido-mobile-label">Chegada prevista</span>
+            <span class="pedido-mobile-value">${fmtDate(p.chegadaPrev)}</span>
+          </div>
+          <div class="pedido-mobile-field">
+            <span class="pedido-mobile-label">Agente</span>
+            <span class="pedido-mobile-value">${escapeHtml(p.agente||'—')}</span>
+          </div>
+          <div class="pedido-mobile-field">
+            <span class="pedido-mobile-label">Porto</span>
+            <span class="pedido-mobile-value">${escapeHtml(p.porto||'—')}</span>
+          </div>
+        </div>
+        <div class="pedido-mobile-status"><span class="stamp-badge ${STATUS_CLASS[p.status]||''}">${escapeHtml(p.status)}</span></div>
+        <details class="pedido-mobile-details">
+          <summary>Ver detalhes</summary>
+          <div class="pedido-mobile-grid">
+            <div class="pedido-mobile-field"><span class="pedido-mobile-label">Contrato</span><span class="pedido-mobile-value">${fmtDate(p.contrato)}</span></div>
+            <div class="pedido-mobile-field"><span class="pedido-mobile-label">Pag. sinal</span><span class="pedido-mobile-value">${fmtDate(p.sinal)}</span></div>
+            <div class="pedido-mobile-field"><span class="pedido-mobile-label">Embarque</span><span class="pedido-mobile-value">${fmtDate(p.embarque)}</span></div>
+            <div class="pedido-mobile-field"><span class="pedido-mobile-label">BL / Booking</span><span class="pedido-mobile-value">${escapeHtml(p.bl||'—')}</span></div>
+            <div class="pedido-mobile-field"><span class="pedido-mobile-label">Atracação</span><span class="pedido-mobile-value">${fmtDate(p.atracacao)}</span></div>
+            <div class="pedido-mobile-field"><span class="pedido-mobile-label">Entrega</span><span class="pedido-mobile-value">${fmtDate(p.entrega)}</span></div>
+            <div class="pedido-mobile-field" style="grid-column:1/-1;"><span class="pedido-mobile-label">Observações</span><span class="pedido-mobile-value">${escapeHtml(p.obs||'—')}</span></div>
+          </div>
+        </details>
+        ${hasPermission(PERMISSIONS.EDITOR) ? `<div class="pedido-mobile-actions"><button class="btn small secondary" onclick="openPedidoModal('${p.id}')">Editar pedido</button></div>` : ''}
+      </article>
+    `).join('');
+  }
 }
 
 // ==================== EXPORTAÇÃO DE DADOS ====================
