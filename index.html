@@ -244,6 +244,20 @@
   
   .mobile-nav-toggle{ display:none; }
 
+  /* Usuários em cards no celular */
+  .usuarios-mobile-list{ display:none; }
+  .usuario-mobile-card{
+    background:var(--white); border:1px solid var(--line); border-top:3px solid var(--gold);
+    border-radius:var(--radius); box-shadow:var(--shadow); padding:14px; margin-bottom:12px;
+  }
+  .usuario-mobile-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; }
+  .usuario-mobile-name{ font-family:'Zilla Slab',serif; font-size:16px; font-weight:700; color:var(--hull); overflow-wrap:anywhere; }
+  .usuario-mobile-grid{ display:grid; grid-template-columns:1fr 1fr; gap:9px 12px; }
+  .usuario-mobile-field{ min-width:0; }
+  .usuario-mobile-label{ display:block; font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#8b8270; margin-bottom:2px; }
+  .usuario-mobile-value{ display:block; font-size:12px; color:var(--ink); overflow-wrap:anywhere; }
+  .usuario-mobile-actions{ display:flex; justify-content:flex-end; margin-top:12px; padding-top:10px; border-top:1px solid #eee3cc; }
+
   /* Pedidos em cards no celular */
   .pedidos-mobile-list{ display:none; }
   .pedido-mobile-card{
@@ -283,6 +297,8 @@
     nav button.active{ border-bottom-color:var(--stamp); }
     #view-pedidos > .table-wrap{ display:none; }
     .pedidos-mobile-list{ display:block; }
+    #view-usuarios .table-wrap{ display:none; }
+    .usuarios-mobile-list{ display:block; }
 
     /* Checklist de documentos: ações mais confortáveis no celular */
     .checklist-item{ padding:11px; gap:8px; }
@@ -752,6 +768,7 @@
           <tbody id="usersTableBody"><tr class="empty-row"><td colspan="7">Carregando usuários...</td></tr></tbody>
         </table>
       </div>
+      <div class="usuarios-mobile-list" id="usersMobileList"></div>
     </div>
   </section>
 </main>
@@ -3061,9 +3078,11 @@ async function loadUsers(){
 
 function renderUsersTable(users){
   const tbody = document.getElementById('usersTableBody');
+  const mobileList = document.getElementById('usersMobileList');
   if(!tbody) return;
   if(users.length === 0){
     tbody.innerHTML = `<tr class="empty-row"><td colspan="7">Nenhum usuário real cadastrado.</td></tr>`;
+    if(mobileList) mobileList.innerHTML = `<div class="empty-state">Nenhum usuário real cadastrado.</div>`;
     return;
   }
 
@@ -3085,6 +3104,31 @@ function renderUsersTable(users){
         <td class="actions-cell"><button class="btn secondary small" onclick="openEditarUsuarioModal('${escapeHtml(user.id)}')">Editar</button></td>
       </tr>`;
   }).join('');
+
+  if(mobileList){
+    mobileList.innerHTML = users.map(user => {
+      const empresas = (user.empresasPermitidas || [])
+        .map(e => e.nome_fantasia || e.razao_social || e.codigo)
+        .join(', ') || 'Nenhuma';
+      const permissao = permLabel[user.permission] || escapeHtml(user.permission || '—');
+      const classePermissao = permClass[user.permission] || '';
+      const dataCadastro = user.created_at ? new Date(user.created_at).toLocaleDateString('pt-BR') : '—';
+      return `
+        <div class="usuario-mobile-card">
+          <div class="usuario-mobile-head">
+            <div class="usuario-mobile-name">${escapeHtml(user.full_name || '—')}</div>
+            <span class="stamp-badge ${user.active ? 's-finalizado' : 's-atrasado'}">${user.active ? 'Ativo' : 'Inativo'}</span>
+          </div>
+          <div class="usuario-mobile-grid">
+            <div class="usuario-mobile-field"><span class="usuario-mobile-label">Usuário</span><span class="usuario-mobile-value">${escapeHtml(user.username || '—')}</span></div>
+            <div class="usuario-mobile-field"><span class="usuario-mobile-label">Permissão</span><span class="usuario-mobile-value"><span class="stamp-badge ${classePermissao}">${permissao}</span></span></div>
+            <div class="usuario-mobile-field" style="grid-column:1/-1;"><span class="usuario-mobile-label">Empresas</span><span class="usuario-mobile-value">${escapeHtml(empresas)}</span></div>
+            <div class="usuario-mobile-field"><span class="usuario-mobile-label">Cadastro</span><span class="usuario-mobile-value">${dataCadastro}</span></div>
+          </div>
+          <div class="usuario-mobile-actions"><button class="btn secondary small" onclick="openEditarUsuarioModal('${escapeHtml(user.id)}')">Editar usuário</button></div>
+        </div>`;
+    }).join('');
+  }
 }
 
 
