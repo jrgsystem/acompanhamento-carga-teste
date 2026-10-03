@@ -283,6 +283,29 @@
     nav button.active{ border-bottom-color:var(--stamp); }
     #view-pedidos > .table-wrap{ display:none; }
     .pedidos-mobile-list{ display:block; }
+
+    /* Checklist de documentos: ações mais confortáveis no celular */
+    .checklist-item{ padding:11px; gap:8px; }
+    .checklist-content{ min-width:0; }
+    .checklist-name{ overflow-wrap:anywhere; line-height:1.35; }
+    .checklist-files{ gap:7px; }
+    .checklist-file{
+      align-items:stretch; flex-direction:column; gap:7px; padding:8px 9px; min-width:0;
+    }
+    .checklist-file > span:first-child{
+      display:block; min-width:0; overflow-wrap:anywhere; word-break:break-word; line-height:1.35;
+    }
+    .checklist-file-actions{
+      width:100%; display:flex; align-items:center; justify-content:flex-end; gap:8px;
+      padding-top:6px; border-top:1px solid #eee3cc;
+    }
+    .checklist-file-download{
+      display:inline-flex; align-items:center; justify-content:center; min-width:36px; min-height:32px;
+      padding:5px 9px; border:1px solid var(--line); border-radius:3px; background:var(--white);
+    }
+    .checklist-file-remove{ min-height:32px; padding:5px 9px; }
+    .checklist-file-add{ padding:5px 0; font-weight:600; }
+
     .charts-container{ grid-template-columns:1fr; }
     .checklist-container{ grid-template-columns:1fr; }
     .filters-row{ flex-direction:column; align-items:stretch; }
