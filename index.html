@@ -1265,11 +1265,11 @@ async function loadAll(){
   const allPedidos = (data||[]).map(rowToPedido);
   pedidos = filterPedidosByUserAccess(allPedidos);
     
-    // Carregar empresas cadastradas
-    await loadEmpresas();
-
-    // Carregar fornecedores cadastrados
-    await loadFornecedores();
+    // Carregar empresas e fornecedores em paralelo: são consultas independentes.
+    await Promise.all([
+      loadEmpresas(),
+      loadFornecedores()
+    ]);
 
     // Preencher filtro de empresas dinamicamente
     populateFilterEmpresa();
