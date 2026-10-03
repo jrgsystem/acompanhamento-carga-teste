@@ -3488,7 +3488,12 @@ handleLogin = async function(event){
   
   await originalHandleLogin(event);
   if(currentUser){
-    // Recarregar dados para garantir que estão atualizados com o novo usuário
+    // O login já validou user_profiles e carregou user_empresas.
+    // Marcar a sessão como verificada evita repetir essas duas consultas
+    // quando loadAll() chamar checkSession() logo após o login.
+    sessionChecked = true;
+
+    // Carregar os dados operacionais uma única vez após o login.
     await loadAll();
     
     // Resetar navegação para aba padrão (resumo)
