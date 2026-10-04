@@ -276,6 +276,38 @@
   .pedido-mobile-details .pedido-mobile-grid{ margin-top:9px; }
   .pedido-mobile-actions{ display:flex; justify-content:flex-end; margin-top:10px; }
 
+  /* Ajuste visual desktop - tabela de Pedidos mais compacta */
+  @media (min-width:769px){
+    #view-pedidos{
+      width:calc(100vw - 32px);
+      margin-left:calc((1220px - 100vw + 32px) / 2);
+    }
+    #view-pedidos > .table-wrap{ overflow-x:auto; }
+    #view-pedidos > .table-wrap > table{
+      min-width:0;
+      width:100%;
+      table-layout:auto;
+    }
+    #view-pedidos > .table-wrap thead th{
+      font-size:9px;
+      letter-spacing:.025em;
+      padding:9px 6px;
+    }
+    #view-pedidos > .table-wrap tbody td{
+      font-size:11.5px;
+      padding:9px 6px;
+      line-height:1.25;
+    }
+    #view-pedidos > .table-wrap .num{ font-size:11px; }
+    #view-pedidos > .table-wrap .company-badge{ font-size:9px; padding:3px 6px; }
+    #view-pedidos > .table-wrap .stamp-badge{ font-size:9px; padding:3px 7px 3px 6px; }
+    #view-pedidos > .table-wrap .btn.small{ padding:5px 8px; font-size:10.5px; }
+    #view-pedidos > .table-wrap th:nth-child(7),
+    #view-pedidos > .table-wrap td:nth-child(7),
+    #view-pedidos > .table-wrap th:nth-child(8),
+    #view-pedidos > .table-wrap td:nth-child(8){ white-space:normal; overflow-wrap:anywhere; }
+  }
+
   @media (max-width:768px){
     .mobile-nav-toggle{
       display:flex; align-items:center; justify-content:space-between; width:100%;
