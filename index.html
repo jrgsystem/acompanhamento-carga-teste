@@ -512,7 +512,7 @@
   <button data-view="pedidos">Pedidos</button>
   <button data-view="graficos">Gráficos</button>
   <button data-view="documentos">Documentos</button>
-  <button data-view="atualizacao">Gerar Mensagem</button>
+  <button data-view="atualizacao">Mensagens e Follow-up</button>
   <button data-view="cadastros" id="navCadastros" style="display:none;">Cadastros</button>
   <button data-view="usuarios" id="navUsuarios" style="display:none;">Usuários</button>
 </nav>
@@ -732,7 +732,54 @@
 
   <!-- ===================== GERAR MENSAGEM ===================== -->
   <section class="view" id="view-atualizacao">
-    <div class="section-title"><h2>Gerar Mensagem de Status</h2><span class="hint">Texto pronto pra compartilhar com quem acompanha o processo</span></div>
+    <div class="section-title"><h2>Mensagens e Follow-up</h2><span class="hint">Histórico de comunicações por pedido e geração de mensagens</span></div>
+    <div class="panel" id="followupPanel">
+      <h3>📨 Histórico de Follow-up</h3>
+      <p class="company-hint">Selecione a empresa e o pedido abaixo. As atualizações mais recentes aparecem primeiro. O cadastro manual, a importação de Excel com prévia e a exportação estão disponíveis. A importação de PDF permite revisar cada mensagem antes de salvar.</p>
+      <div class="form-grid">
+        <div><label for="fuEmpresa">Empresa</label><select id="fuEmpresa" onchange="fuEmpresaMudou()"><option value="">Selecione uma empresa...</option></select></div>
+        <div><label for="fuPedido">Pedido</label><select id="fuPedido" onchange="fuCarregar()" disabled><option value="">Selecione a empresa...</option></select></div>
+      </div>
+      <div id="fuExportacoes" style="display:none;gap:8px;flex-wrap:wrap;margin-top:14px;">
+        <button type="button" class="btn secondary" id="fuImportarPdf" onclick="document.getElementById('fuArquivoPdf').click()">📄 Importar PDF</button>
+        <input type="file" id="fuArquivoPdf" accept="application/pdf,.pdf" style="display:none" onchange="fuLerPdf(event)">
+        <button type="button" class="btn secondary" id="fuImportarExcel" onclick="document.getElementById('fuArquivoExcel').click()">📥 Importar Excel</button>
+        <input type="file" id="fuArquivoExcel" accept=".xlsx,.xls" style="display:none" onchange="fuLerExcel(event)">
+        <button type="button" class="btn secondary" id="fuExportarPdf" onclick="fuExportar('pdf')">📄 Exportar PDF</button>
+        <button type="button" class="btn secondary" id="fuExportarExcel" onclick="fuExportar('excel')">📊 Exportar Excel</button>
+      </div>
+      <div id="fuPreviaImportacao" style="display:none;margin-top:18px;border:1px solid var(--line);padding:16px;background:var(--paper-2)"></div>
+      <div id="fuConteudo" style="display:none;margin-top:20px;">
+        <div id="fuFormulario">
+          <h3>✍️ Nova atualização manual</h3>
+          <div class="form-grid">
+            <div><label for="fuData">Data e hora da atualização</label><input type="datetime-local" id="fuData"></div>
+            <div><label for="fuTipo">Tipo</label><select id="fuTipo"><option value="observacao">Observação</option><option value="recebido">E-mail recebido</option><option value="enviado">E-mail enviado</option></select></div>
+            <div class="full"><label for="fuAssunto">Assunto</label><input id="fuAssunto" maxlength="250" placeholder="Ex.: Nova previsão de chegada"></div>
+            <div class="full"><label for="fuResumo">Atualização / resumo operacional *</label><textarea id="fuResumo" rows="4" placeholder="Descreva a atualização recebida..." required></textarea></div>
+            <div class="full"><label for="fuOriginal">Conteúdo original (opcional)</label><textarea id="fuOriginal" rows="3" placeholder="Trecho do e-mail, se desejar guardar..."></textarea></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;"><button type="button" class="btn" id="fuSalvarBtn" onclick="fuSalvar()">Salvar atualização</button><button type="button" class="btn secondary" onclick="fuCarregar()">↻ Atualizar histórico</button></div>
+        </div>
+        <div id="fuEditor" class="panel" style="display:none;margin-top:16px;border:2px solid var(--gold)">
+          <h3>✏️ Editar atualização</h3>
+          <div class="form-grid">
+            <div><label>Data e hora</label><input type="datetime-local" id="fuEditData"></div>
+            <div><label>Tipo</label><select id="fuEditTipo"><option value="observacao">Observação</option><option value="recebido">Recebido</option><option value="enviado">Enviado</option></select></div>
+            <div class="full"><label>Assunto</label><input id="fuEditAssunto" maxlength="250"></div>
+            <div class="full"><label>Resumo operacional</label><textarea id="fuEditResumo" rows="4"></textarea></div>
+            <div class="full"><label>Conteúdo original</label><textarea id="fuEditOriginal" rows="4"></textarea></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+            <button type="button" class="btn" id="fuEditSalvarBtn" onclick="fuSalvarEdicao()">Salvar alterações</button>
+            <button type="button" class="btn ghost" onclick="fuCancelarEdicao()">Cancelar</button>
+          </div>
+        </div>
+        <h3 style="margin-top:24px;">🕒 Histórico do pedido</h3>
+        <div id="fuHistorico" aria-live="polite">Selecione um pedido.</div>
+      </div>
+      <div id="fuInstrucao" class="empty-state">Selecione uma empresa e um pedido para visualizar o histórico.</div>
+    </div>
     <div class="panel">
       <h3>📤 Status de um pedido específico</h3>
       <div class="form-grid">
@@ -1766,6 +1813,459 @@ function renderResumo(){
   }
 }
 
+// ==================== FOLLOW-UP MANUAL ====================
+let fuSeq = 0;
+function fuRefreshEmpresas(){
+  const sel = document.getElementById('fuEmpresa');
+  if(!sel) return;
+  const anterior = sel.value;
+  const disponiveis = empresasCadastradas.filter(e => pedidos.some(p => p.empresa_id === e.id));
+  sel.innerHTML = '<option value="">Selecione uma empresa...</option>' + disponiveis.map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(empresaLabel(e.codigo))}</option>`).join('');
+  if(disponiveis.some(e => e.id === anterior)) sel.value = anterior;
+  fuEmpresaMudou(true);
+}
+function fuEmpresaMudou(preservar=false){
+  const empresaId = document.getElementById('fuEmpresa').value;
+  const sel = document.getElementById('fuPedido');
+  const anterior = preservar ? sel.value : '';
+  const lista = pedidos.filter(p => p.empresa_id === empresaId).slice().sort((a,b)=>a.numero.localeCompare(b.numero));
+  sel.disabled = !empresaId;
+  sel.innerHTML = '<option value="">Selecione um pedido...</option>' + lista.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.numero)}</option>`).join('');
+  if(lista.some(p=>p.id === anterior)) sel.value = anterior;
+  fuLimparPrevia();
+  fuCarregar();
+}
+// Planilhas de Follow-up normalmente informam apenas a data, sem hora.
+function fuFormatarDataRegistro(valor, origem){
+  const d=new Date(valor);
+  if(Number.isNaN(d.getTime()))return 'Data não informada';
+  return origem==='excel' ? d.toLocaleDateString('pt-BR') : d.toLocaleString('pt-BR');
+}
+// Chave de comparação por dia para registros importados de Excel.
+// Também reconhece importações anteriores que ficaram com 00:00:04.
+function fuChaveImportacaoExcel(r){
+  const d=new Date(r.data_atualizacao);
+  const data=(r.origem==='excel' && !Number.isNaN(d.getTime()))
+    ? d.toISOString().slice(0,10) : d.toISOString();
+  return [data,r.tipo||'observacao',(r.assunto||'').trim(),(r.resumo_operacional||'').trim()].join('|');
+}
+function fuPodeEditar(){return currentUser && ['admin','editor'].includes(currentUser.permission) && currentUser.active !== false;}
+let fuEditando=null;
+function fuPodeExcluir(){return !!currentUser && currentUser.permission==='admin' && currentUser.active!==false;}
+function fuCancelarEdicao(){fuEditando=null;document.getElementById('fuEditor').style.display='none';}
+function fuIniciarEdicao(item){
+  if(!fuPodeEditar())return;
+  fuEditando={id:item.id,pedido_id:document.getElementById('fuPedido').value};
+  const d=new Date(item.data_atualizacao);
+  const local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  document.getElementById('fuEditData').value=local;
+  document.getElementById('fuEditTipo').value=item.tipo||'observacao';
+  document.getElementById('fuEditAssunto').value=item.assunto||'';
+  document.getElementById('fuEditResumo').value=item.resumo_operacional||'';
+  document.getElementById('fuEditOriginal').value=item.conteudo_original||'';
+  const el=document.getElementById('fuEditor');el.style.display='block';el.scrollIntoView({behavior:'smooth',block:'center'});
+}
+async function fuSalvarEdicao(){
+  if(!fuEditando||!fuPodeEditar()||fuEditando.pedido_id!==document.getElementById('fuPedido').value)return;
+  const resumo=document.getElementById('fuEditResumo').value.trim();
+  const d=new Date(document.getElementById('fuEditData').value);
+  if(!resumo||Number.isNaN(d.getTime())){showNotification('Informe data válida e resumo.','warning');return;}
+  const btn=document.getElementById('fuEditSalvarBtn');btn.disabled=true;
+  try{
+    const {data,error}=await sb.from('pedido_followups').update({data_atualizacao:d.toISOString(),tipo:document.getElementById('fuEditTipo').value,assunto:document.getElementById('fuEditAssunto').value.trim()||null,resumo_operacional:resumo,conteudo_original:document.getElementById('fuEditOriginal').value.trim()||null}).eq('id',fuEditando.id).eq('pedido_id',fuEditando.pedido_id).select('id');
+    if(error)throw error;if(!data?.length)throw new Error('Registro não atualizado. Confira suas permissões.');
+    fuCancelarEdicao();showNotification('Atualização editada com sucesso.','success');await fuCarregar();
+  }catch(e){showNotification('Erro ao editar: '+e.message,'error',6000);}finally{btn.disabled=false;}
+}
+async function fuExcluir(item){
+  if(!fuPodeExcluir()||!document.getElementById('fuPedido').value)return;
+  if(!confirm('Excluir permanentemente esta atualização? Esta ação não pode ser desfeita.'))return;
+  try{const {data,error}=await sb.from('pedido_followups').delete().eq('id',item.id).eq('pedido_id',document.getElementById('fuPedido').value).select('id');
+    if(error)throw error;if(!data?.length)throw new Error('Registro não excluído. Confira suas permissões.');
+    fuCancelarEdicao();showNotification('Atualização excluída.','success');await fuCarregar();
+  }catch(e){showNotification('Erro ao excluir: '+e.message,'error',6000);}
+}
+async function fuCarregar(){
+  const pedidoId = document.getElementById('fuPedido').value;
+  const content = document.getElementById('fuConteudo');
+  document.getElementById('fuInstrucao').style.display = pedidoId ? 'none' : 'block';
+  content.style.display = pedidoId ? 'block' : 'none';
+  document.getElementById('fuExportacoes').style.display = pedidoId ? 'flex' : 'none';
+  fuCancelarEdicao();
+  if(!pedidoId){fuLimparPrevia();return;}
+  const seq = ++fuSeq;
+  document.getElementById('fuFormulario').style.display = fuPodeEditar() ? 'block' : 'none';
+  const historico = document.getElementById('fuHistorico');
+  historico.textContent = 'Carregando histórico...';
+  if(!sb){historico.textContent = 'Conexão indisponível.';return;}
+  const {data,error} = await sb.from('pedido_followups').select('id,data_atualizacao,tipo,assunto,conteudo_original,resumo_operacional,origem,criado_em').eq('pedido_id',pedidoId).order('data_atualizacao',{ascending:false}).order('criado_em',{ascending:false});
+  if(seq !== fuSeq || document.getElementById('fuPedido').value !== pedidoId) return;
+  if(error){historico.textContent = 'Erro ao carregar histórico: ' + error.message;return;}
+  if(!data?.length){historico.textContent = 'Nenhuma atualização registrada para este pedido.';return;}
+  historico.replaceChildren();
+  for(const item of data){
+    const card = document.createElement('div');
+    card.style.cssText = 'border:1px solid var(--line);border-left:4px solid var(--river);background:var(--white);padding:14px;margin-bottom:10px;border-radius:4px;overflow-wrap:anywhere';
+    const titulo = document.createElement('div');
+    titulo.style.cssText='font-weight:700;color:var(--hull);margin-bottom:7px';
+    const dataStr = new Date(item.data_atualizacao);
+    titulo.textContent = `${Number.isNaN(dataStr.getTime())?'Data não informada':fuFormatarDataRegistro(item.data_atualizacao,item.origem)} · ${item.tipo === 'recebido'?'Recebido':item.tipo === 'enviado'?'Enviado':'Observação'} · ${item.origem || 'manual'}`;
+    card.appendChild(titulo);
+    if(item.assunto){const assunto=document.createElement('div');assunto.style.fontWeight='600';assunto.textContent=item.assunto;card.appendChild(assunto);}
+    const resumo=document.createElement('div');resumo.style.cssText='white-space:pre-wrap;font-size:13px;margin-top:7px';resumo.textContent=item.resumo_operacional || item.conteudo_original || '(Sem conteúdo)';card.appendChild(resumo);
+    if(item.conteudo_original && item.resumo_operacional){const details=document.createElement('details');details.style.marginTop='9px';const summary=document.createElement('summary');summary.textContent='Ver conteúdo original';details.appendChild(summary);const original=document.createElement('div');original.style.cssText='white-space:pre-wrap;font-size:12px;margin-top:8px';original.textContent=item.conteudo_original;details.appendChild(original);card.appendChild(details);}
+    if(fuPodeEditar() || fuPodeExcluir()){
+      const acoes=document.createElement('div');acoes.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:12px';
+      if(fuPodeEditar()){const b=document.createElement('button');b.type='button';b.className='btn small secondary';b.textContent='✏️ Editar';b.onclick=()=>fuIniciarEdicao(item);acoes.appendChild(b);}
+      if(fuPodeExcluir()){const b=document.createElement('button');b.type='button';b.className='btn small danger';b.textContent='🗑️ Excluir';b.onclick=()=>fuExcluir(item);acoes.appendChild(b);}
+      card.appendChild(acoes);
+    }
+    historico.appendChild(card);
+  }
+}
+async function fuSalvar(){
+  const pedidoId=document.getElementById('fuPedido').value;
+  const empresaId=document.getElementById('fuEmpresa').value;
+  const pedido=pedidos.find(p=>p.id===pedidoId && p.empresa_id===empresaId);
+  if(!pedido || !fuPodeEditar()){showNotification('Sem permissão ou pedido inválido.','error');return;}
+  const resumo=document.getElementById('fuResumo').value.trim();
+  const dataValor=document.getElementById('fuData').value;
+  if(!resumo || !dataValor){showNotification('Informe a data e a atualização.','warning');return;}
+  const dt=new Date(dataValor);
+  if(Number.isNaN(dt.getTime())){showNotification('Data inválida.','warning');return;}
+  const btn=document.getElementById('fuSalvarBtn');btn.disabled=true;
+  try{
+    const {error}=await sb.from('pedido_followups').insert({pedido_id:pedidoId,empresa_id:empresaId,data_atualizacao:dt.toISOString(),tipo:document.getElementById('fuTipo').value,assunto:document.getElementById('fuAssunto').value.trim()||null,resumo_operacional:resumo,conteudo_original:document.getElementById('fuOriginal').value.trim()||null,origem:'manual'});
+    if(error) throw error;
+    document.getElementById('fuResumo').value='';document.getElementById('fuOriginal').value='';document.getElementById('fuAssunto').value='';
+    showNotification('Follow-up salvo com sucesso.','success');await fuCarregar();
+  }catch(e){showNotification('Erro ao salvar follow-up: '+(e.message||e),'error',6000);}finally{btn.disabled=false;}
+}
+// Exportação independente do histórico exibido; busca todas as páginas antes de gerar o arquivo.
+async function fuObterHistoricoCompleto(pedidoId){
+  const registros=[];
+  const tamanhoPagina=500;
+  for(let inicio=0;;inicio+=tamanhoPagina){
+    const {data,error}=await sb.from('pedido_followups')
+      .select('data_atualizacao,tipo,assunto,remetente,destinatario,resumo_operacional,conteudo_original,origem')
+      .eq('pedido_id',pedidoId)
+      .order('data_atualizacao',{ascending:false})
+      .order('id',{ascending:false})
+      .range(inicio,inicio+tamanhoPagina-1);
+    if(error) throw error;
+    registros.push(...(data||[]));
+    if(!data || data.length<tamanhoPagina) break;
+  }
+  return registros;
+}
+async function fuExportar(formato){
+  const pedidoId=document.getElementById('fuPedido').value;
+  const empresaId=document.getElementById('fuEmpresa').value;
+  const pedido=pedidos.find(p=>p.id===pedidoId && p.empresa_id===empresaId);
+  if(!pedido){showNotification('Selecione uma empresa e um pedido.','warning');return;}
+  const btns=[document.getElementById('fuExportarPdf'),document.getElementById('fuExportarExcel')];
+  btns.forEach(b=>b.disabled=true);
+  try{
+    const itens=await fuObterHistoricoCompleto(pedidoId);
+    if(!itens.length){showNotification('Este pedido ainda não possui atualizações para exportar.','warning');return;}
+    const tipoLabel=t=>t==='recebido'?'Recebido':t==='enviado'?'Enviado':'Observação';
+    const dataLabel=(v,origem)=>fuFormatarDataRegistro(v,origem);
+    const linhas=itens.map(i=>({
+      'Data e hora':dataLabel(i.data_atualizacao,i.origem),
+      'Tipo':tipoLabel(i.tipo),
+      'Assunto':i.assunto||'',
+      'Remetente':i.remetente||'',
+      'Destinatário':i.destinatario||'',
+      'Resumo operacional':i.resumo_operacional||'',
+      'Conteúdo original':i.conteudo_original||'',
+      'Origem':i.origem||''
+    }));
+    const nomeSeguro=String(pedido.numero||'pedido').replace(/[^a-zA-Z0-9_-]/g,'_');
+    const nome=`followup_${nomeSeguro}_${new Date().toISOString().slice(0,10)}`;
+    if(formato==='excel'){
+      if(!window.XLSX) throw new Error('Biblioteca de Excel não carregada.');
+      const wb=XLSX.utils.book_new();
+      const ws=XLSX.utils.json_to_sheet(linhas);
+      ws['!cols']=[{wch:21},{wch:16},{wch:35},{wch:28},{wch:28},{wch:65},{wch:65},{wch:15}];
+      XLSX.utils.book_append_sheet(wb,ws,'Histórico');
+      XLSX.writeFile(wb,nome+'.xlsx');
+    }else if(formato==='pdf'){
+      if(!window.jspdf?.jsPDF) throw new Error('Biblioteca de PDF não carregada.');
+      const doc=new window.jspdf.jsPDF();
+      const largura=doc.internal.pageSize.getWidth();
+      const margem=14;
+      let y=19;
+      const rodape=()=>{doc.setFontSize(8);doc.setTextColor(110);doc.text(`Follow-up • ${pedido.numero||''} • ${new Date().toLocaleDateString('pt-BR')}`,margem,doc.internal.pageSize.getHeight()-9);doc.setTextColor(0);};
+      const novaPagina=()=>{rodape();doc.addPage();y=18;};
+      const texto=(valor,tamanho=10)=>{
+        doc.setFontSize(tamanho);
+        const linhasTexto=doc.splitTextToSize(String(valor||'—'),largura-margem*2);
+        const altura=linhasTexto.length*(tamanho*0.47)+3;
+        if(y+altura>doc.internal.pageSize.getHeight()-18) novaPagina();
+        doc.text(linhasTexto,margem,y);
+        y+=altura;
+      };
+      doc.setFontSize(17);doc.text('Histórico de Follow-up',margem,y);y+=11;
+      texto(`Pedido: ${pedido.numero||'—'}   |   Empresa: ${empresaLabel(pedido.empresa)||'—'}`,10);
+      texto(`Total de atualizações: ${itens.length}   |   Exportado em: ${new Date().toLocaleString('pt-BR')}`,9);
+      y+=5;
+      for(const item of itens){
+        if(y>doc.internal.pageSize.getHeight()-40) novaPagina();
+        doc.setDrawColor(190);doc.line(margem,y,largura-margem,y);y+=7;
+        texto(`${dataLabel(item.data_atualizacao,item.origem)}  |  ${tipoLabel(item.tipo)}  |  ${item.origem||'manual'}`,11);
+        if(item.assunto) texto(`Assunto: ${item.assunto}`);
+        if(item.remetente) texto(`Remetente: ${item.remetente}`,9);
+        if(item.destinatario) texto(`Destinatário: ${item.destinatario}`,9);
+        if(item.resumo_operacional) texto(`Resumo: ${item.resumo_operacional}`);
+        if(item.conteudo_original) texto(`Conteúdo original: ${item.conteudo_original}`,9);
+        y+=4;
+      }
+      rodape();doc.save(nome+'.pdf');
+    }else throw new Error('Formato não suportado.');
+    showNotification('Histórico exportado com sucesso.','success');
+  }catch(e){showNotification('Erro ao exportar: '+(e.message||e),'error',7000);}
+  finally{btns.forEach(b=>b.disabled=false);}
+}
+
+// Importação de Excel: leitura local, revisão obrigatória e confirmação explícita.
+let fuImportacao = [];
+let fuImportacaoContexto = '';
+function fuLimparPrevia(){
+  fuImportacao=[];fuImportacaoContexto='';
+  const el=document.getElementById('fuPreviaImportacao');
+  if(el){el.style.display='none';el.replaceChildren();}
+  const arquivo=document.getElementById('fuArquivoExcel');if(arquivo)arquivo.value='';const pdf=document.getElementById('fuArquivoPdf');if(pdf)pdf.value='';
+}
+function fuDataExcel(valor){
+  if(valor instanceof Date && !isNaN(valor)) return valor;
+  if(typeof valor==='number'){
+    const p=XLSX.SSF.parse_date_code(valor);
+    if(p) return new Date(p.y,p.m-1,p.d,p.H||0,p.M||0,Math.floor(p.S||0));
+  }
+  const texto=String(valor??'').trim();
+  const br=texto.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if(br) return new Date(+br[3],+br[2]-1,+br[1],+(br[4]||0),+(br[5]||0),+(br[6]||0));
+  const iso=new Date(texto);return iso;
+}
+async function fuLerExcel(event){
+  const arquivo=event.target.files?.[0];
+  fuLimparPrevia();
+  if(!arquivo)return;
+  if(!fuPodeEditar()){showNotification('Sem permissão para importar.','error');return;}
+  const empresaId=document.getElementById('fuEmpresa').value;
+  const pedidoId=document.getElementById('fuPedido').value;
+  if(!pedidos.some(p=>p.id===pedidoId&&p.empresa_id===empresaId)){showNotification('Selecione empresa e pedido válidos.','warning');return;}
+  if(!/\.xlsx?$/i.test(arquivo.name)||arquivo.size>5*1024*1024){showNotification('Selecione um arquivo XLSX/XLS de até 5 MB.','warning');return;}
+  try{
+    if(!window.XLSX)throw new Error('Biblioteca Excel indisponível.');
+    const bytes=await arquivo.arrayBuffer();
+    const livro=XLSX.read(bytes,{type:'array',cellDates:true});
+    const pedidoAtual=pedidos.find(p=>p.id===pedidoId);
+    const numeroPedido=String(pedidoAtual?.numero_pedido||pedidoAtual?.numero||pedidoAtual?.pedido||'').trim();
+    const nomes=livro.SheetNames;
+    const abaCompativel=nomes.find(n=>numeroPedido && n.trim().toLowerCase()===numeroPedido.toLowerCase());
+    const aba=abaCompativel||(nomes.length===1?nomes[0]:null);
+    if(!aba)throw new Error('O arquivo possui várias abas. Separe a aba do pedido selecionado em um Excel próprio antes de importar.');
+    const matriz=XLSX.utils.sheet_to_json(livro.Sheets[aba],{header:1,defval:'',raw:true});
+    if(matriz.length>550)throw new Error('Limite de 500 atualizações por importação.');
+    const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/\s+/g,' ');
+    const indiceCabecalho=matriz.findIndex(l=>l.some(c=>['data','data e hora','data atualizacao'].includes(norm(c))) && l.some(c=>['atualizacao do follow-up','resumo operacional','atualizacao','descricao'].includes(norm(c))));
+    if(indiceCabecalho<0)throw new Error('Cabeçalho de atualizações não encontrado.');
+    const cabecalhos=matriz[indiceCabecalho].map(norm);
+    const obter=(linha,...nomes)=>{const i=cabecalhos.findIndex(k=>nomes.includes(k));return i<0?'':linha[i];};
+    const importados=[];let invalidos=0;
+    for(const linha of matriz.slice(indiceCabecalho+1)){
+      if(!linha.some(v=>String(v??'').trim()))continue;
+      const data=fuDataExcel(obter(linha,'data e hora','data','data atualizacao','data da atualizacao'));
+      const resumo=String(obter(linha,'resumo operacional','atualizacao do follow-up','atualizacao','atualizacao / resumo operacional','resumo','descricao')||'').trim();
+      if(!(data instanceof Date)||isNaN(data.getTime())||!resumo){invalidos++;continue;}
+      if(data.getHours()===0 && data.getMinutes()===0 && data.getSeconds()<10)data.setSeconds(0,0);
+      const etapa=String(obter(linha,'etapa / status','etapa','status','assunto')||'').trim();
+      const previsao=String(obter(linha,'proxima previsao')||'').trim();
+      const pendencia=String(obter(linha,'observacao / pendencia','observacao','pendencia')||'').trim();
+      const original=[previsao&&'Próxima previsão: '+previsao,pendencia&&'Observação / pendência: '+pendencia].filter(Boolean).join('\n');
+      const tipoTexto=norm(obter(linha,'tipo'));
+      const tipo=tipoTexto.includes('recebid')?'recebido':tipoTexto.includes('enviad')?'enviado':'observacao';
+      importados.push({pedido_id:pedidoId,empresa_id:empresaId,data_atualizacao:data.toISOString(),tipo,
+        assunto:etapa||null,remetente:null,destinatario:null,resumo_operacional:resumo,
+        conteudo_original:original||null,origem:'excel',arquivo_origem:arquivo.name});
+    }
+    if(!importados.length)throw new Error('Nenhuma atualização válida encontrada na aba '+aba+'.');
+    const existentes=await fuObterHistoricoCompleto(pedidoId);
+    const chave=fuChaveImportacaoExcel;
+    const chaves=new Set(existentes.map(chave));
+    fuImportacao=importados.map(r=>{const k=chave(r);const duplicado=chaves.has(k);chaves.add(k);return {...r,duplicado};});
+    fuImportacaoContexto=empresaId+'|'+pedidoId;
+    const painel=document.getElementById('fuPreviaImportacao');painel.replaceChildren();painel.style.display='block';
+    const h=document.createElement('h3');h.textContent='📥 Prévia da importação — '+arquivo.name;painel.appendChild(h);
+    const info=document.createElement('p');info.textContent=`${fuImportacao.length} linha(s) válida(s), ${invalidos} inválida(s), ${fuImportacao.filter(r=>r.duplicado).length} possível(is) duplicada(s). Revise antes de confirmar.`;painel.appendChild(info);
+    const lista=document.createElement('div');lista.style.cssText='max-height:320px;overflow:auto';
+    fuImportacao.forEach((r,i)=>{
+      const label=document.createElement('label');label.style.cssText='display:flex;align-items:flex-start;gap:9px;padding:9px;border-bottom:1px solid var(--line);text-transform:none;letter-spacing:normal';
+      const ck=document.createElement('input');ck.type='checkbox';ck.className='fuImportarCheck';ck.dataset.idx=i;ck.checked=!r.duplicado;ck.disabled=r.duplicado;ck.style.width='auto';
+      const span=document.createElement('span');span.style.cssText='font-size:12px;overflow-wrap:anywhere';span.textContent=`${fuFormatarDataRegistro(r.data_atualizacao,r.origem)} — ${r.assunto||'(sem assunto)'} — ${r.resumo_operacional.slice(0,240)}${r.duplicado?' [POSSÍVEL DUPLICATA — não selecionável]':''}`;
+      label.append(ck,span);lista.appendChild(label);
+    });painel.appendChild(lista);
+    const botoes=document.createElement('div');botoes.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:12px';
+    const confirmar=document.createElement('button');confirmar.className='btn';confirmar.textContent='Confirmar importação dos selecionados';confirmar.onclick=fuConfirmarExcel;
+    const cancelar=document.createElement('button');cancelar.className='btn ghost';cancelar.textContent='Cancelar';cancelar.onclick=fuLimparPrevia;
+    botoes.append(confirmar,cancelar);painel.appendChild(botoes);
+  }catch(e){fuLimparPrevia();showNotification('Erro ao ler Excel: '+(e.message||e),'error',7000);}
+}
+async function fuConfirmarExcel(){
+  if(!fuPodeEditar()||fuImportacaoContexto!==document.getElementById('fuEmpresa').value+'|'+document.getElementById('fuPedido').value){showNotification('Empresa ou pedido alterado. Importe novamente.','warning');fuLimparPrevia();return;}
+  const selecionados=[...document.querySelectorAll('.fuImportarCheck:checked')].map(e=>fuImportacao[Number(e.dataset.idx)]).filter(r=>r&&!r.duplicado).map(({duplicado,...r})=>r);
+  if(!selecionados.length){showNotification('Nenhuma atualização selecionada.','warning');return;}
+  const botao=document.querySelector('#fuPreviaImportacao button');botao.disabled=true;
+  try{
+    // Segunda checagem contra duplicações antes da gravação.
+    const existentes=await fuObterHistoricoCompleto(document.getElementById('fuPedido').value);
+    const chave=fuChaveImportacaoExcel;
+    const chaves=new Set(existentes.map(chave));const novos=selecionados.filter(r=>!chaves.has(chave(r)));
+    if(!novos.length){showNotification('Todos os registros selecionados já existem.','warning');fuLimparPrevia();return;}
+    // Lotes pequenos para evitar requisições grandes.
+    for(let i=0;i<novos.length;i+=50){const {error}=await sb.from('pedido_followups').insert(novos.slice(i,i+50));if(error)throw error;}
+    showNotification(`${novos.length} atualização(ões) importada(s) com sucesso.`,'success');fuLimparPrevia();await fuCarregar();
+  }catch(e){showNotification('Erro na importação (verifique o histórico antes de repetir): '+(e.message||e),'error',8000);botao.disabled=false;}
+}
+
+// Importação de PDF: texto local, revisão editável e gravação explícita.
+let fuPdfRegistros=[];
+let fuPdfContexto='';
+async function fuLerPdf(event){
+  const arquivo=event.target.files?.[0];
+  fuLimparPrevia();fuPdfRegistros=[];fuPdfContexto='';
+  if(!arquivo)return;
+  if(!fuPodeEditar()){showNotification('Sem permissão para importar.','error');return;}
+  const empresaId=document.getElementById('fuEmpresa').value;
+  const pedidoId=document.getElementById('fuPedido').value;
+  if(!pedidos.some(p=>p.id===pedidoId&&p.empresa_id===empresaId)){showNotification('Selecione empresa e pedido válidos.','warning');return;}
+  if(!/\.pdf$/i.test(arquivo.name)||arquivo.size>15*1024*1024){showNotification('Selecione um PDF de até 15 MB.','warning');return;}
+  const painel=document.getElementById('fuPreviaImportacao');
+  painel.style.display='block';painel.textContent='Lendo o PDF localmente...';
+  try{
+    const pdfjs=await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
+    const doc=await pdfjs.getDocument({data:new Uint8Array(await arquivo.arrayBuffer())}).promise;
+    if(doc.numPages>100)throw new Error('Limite de 100 páginas por PDF.');
+    const paginas=[];
+    for(let i=1;i<=doc.numPages;i++){
+      const pg=await doc.getPage(i);const c=await pg.getTextContent();
+      // Reconstruir linhas usando a posição vertical do texto.
+      const linhas=[];let ultimaY=null,partes=[];
+      for(const it of c.items){if(!('str' in it))continue;const y=Math.round(it.transform?.[5]||0);
+        if(ultimaY!==null&&Math.abs(y-ultimaY)>3){linhas.push(partes.join(' ').replace(/\s+/g,' ').trim());partes=[];}
+        partes.push(it.str);ultimaY=y;
+        if(it.hasEOL){linhas.push(partes.join(' ').replace(/\s+/g,' ').trim());partes=[];ultimaY=null;}
+      }
+      if(partes.length)linhas.push(partes.join(' ').replace(/\s+/g,' ').trim());
+      paginas.push(linhas.filter(Boolean).join('\n'));
+    }
+    let texto=paginas.join('\n');
+    let usouOCR=false;
+    if(texto.trim().length<30){
+      // PDFs impressos do webmail podem conter apenas imagens, sem camada de texto.
+      // OCR é executado no navegador; a confirmação da prévia continua obrigatória.
+      usouOCR=true;
+      painel.textContent='PDF em imagem detectado. Preparando OCR em português (pode levar alguns minutos)...';
+      if(!window.Tesseract){
+        await new Promise((resolve,reject)=>{
+          const script=document.createElement('script');
+          script.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+          script.onload=resolve;script.onerror=()=>reject(new Error('Não foi possível carregar o mecanismo de OCR. Verifique a internet.'));
+          document.head.appendChild(script);
+        });
+      }
+      const worker=await window.Tesseract.createWorker('por',1,{
+        logger:m=>{if(m.status==='recognizing text')painel.textContent=`OCR: ${Math.round((m.progress||0)*100)}% da página atual. Aguarde...`;}
+      });
+      try{
+        const textos=[];
+        for(let i=1;i<=doc.numPages;i++){
+          painel.textContent=`Reconhecendo página ${i} de ${doc.numPages}...`;
+          const pg=await doc.getPage(i);
+          const viewport=pg.getViewport({scale:2.2});
+          const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+          await pg.render({canvasContext:canvas.getContext('2d',{willReadFrequently:true}),viewport}).promise;
+          const result=await worker.recognize(canvas);
+          textos.push(result.data.text||'');canvas.width=0;canvas.height=0;
+        }
+        texto=textos.join('\n');
+      }finally{await worker.terminate();}
+      if(texto.trim().length<30)throw new Error('O OCR não encontrou texto suficiente. Nenhum dado foi salvo.');
+    }
+    // Histórico tabular do webmail: cada linha com data no início indica nova atualização.
+    // Para PDFs comuns, mantém separação por cabeçalhos de e-mail.
+    const linhas=texto.split('\n');const blocos=[];let atual=[];let iniciouTabela=false;
+    const cabecalho=/^(?:De|From|Enviado em|Sent|Data|Date)\s*:/i;
+    const dataInicio=/^\s*(\d{1,2})[\/.\-](\d{1,2})[\/.\-](20\d{2})\b/;
+    for(const linha of linhas){
+      const temData=dataInicio.test(linha);
+      if(usouOCR){
+        if(temData){
+          if(atual.join('\n').trim().length>20)blocos.push(atual.join('\n'));
+          atual=[linha];iniciouTabela=true;
+        }else if(iniciouTabela){atual.push(linha);}
+      }else{
+        if(cabecalho.test(linha)&&atual.join('\n').trim().length>30){blocos.push(atual.join('\n'));atual=[];}
+        atual.push(linha);
+      }
+    }
+    if(atual.join('\n').trim().length>20)blocos.push(atual.join('\n'));
+    if(!blocos.length)blocos.push(texto);
+    const candidatos=blocos.filter(b=>b.trim().length>20).slice(0,150);
+    fuPdfRegistros=candidatos.map(b=>{
+      const dataMatch=b.match(/\b(\d{1,2})[\/.-](\d{1,2})[\/.-](20\d{2})(?:\s+(?:às?\s*)?(\d{1,2}):(\d{2}))?/);
+      let dt='';if(dataMatch){const d=new Date(+dataMatch[3],+dataMatch[2]-1,+dataMatch[1],+(dataMatch[4]||0),+(dataMatch[5]||0));if(!isNaN(d)&&d.getDate()===+dataMatch[1])dt=`${dataMatch[3]}-${dataMatch[2].padStart(2,'0')}-${dataMatch[1].padStart(2,'0')}T${(dataMatch[4]||'00').padStart(2,'0')}:${dataMatch[5]||'00'}`;}
+      const assunto=b.match(/^(?:Assunto|Subject)\s*:\s*(.+)$/im)?.[1]?.trim()||'';
+      return {data:dt,assunto,resumo:'',original:b.trim(),tipo:'recebido',selecionado:!!dt};
+    });
+    fuPdfContexto=empresaId+'|'+pedidoId;
+    painel.replaceChildren();
+    const h=document.createElement('h3');h.textContent='📄 Prévia do PDF — '+arquivo.name;painel.appendChild(h);
+    const aviso=document.createElement('p');aviso.textContent=`${doc.numPages} página(s), ${fuPdfRegistros.length} bloco(s) encontrado(s). ${usouOCR?'Texto reconhecido por OCR. ':''}A separação e as datas são sugestões automáticas: confira e corrija cada registro. Blocos sem data ficam desmarcados. Nenhum dado será salvo antes da confirmação.`;painel.appendChild(aviso);
+    const lista=document.createElement('div');lista.style.cssText='max-height:520px;overflow-y:auto;display:grid;gap:12px';
+    fuPdfRegistros.forEach((r,i)=>{
+      const box=document.createElement('div');box.style.cssText='padding:12px;background:var(--white);border:1px solid var(--line);border-radius:4px';
+      const titulo=document.createElement('label');titulo.style.cssText='display:flex;align-items:center;gap:8px;text-transform:none';
+      const ck=document.createElement('input');ck.type='checkbox';ck.checked=r.selecionado;ck.style.width='auto';ck.onchange=()=>r.selecionado=ck.checked;
+      titulo.append(ck,document.createTextNode(` Importar bloco ${i+1}`));box.append(titulo);
+      const campo=(rotulo,tipo,valor,fn)=>{const lab=document.createElement('label');lab.textContent=rotulo;lab.style.marginTop='9px';box.append(lab);const inp=document.createElement(tipo==='textarea'?'textarea':'input');if(tipo!=='textarea')inp.type=tipo;inp.value=valor;inp.oninput=()=>fn(inp.value);if(tipo==='textarea')inp.rows=3;box.append(inp);};
+      campo('Data e hora (obrigatória)','datetime-local',r.data,v=>r.data=v);
+      campo('Assunto','text',r.assunto,v=>r.assunto=v);
+      campo('Resumo operacional (obrigatório)','textarea',r.resumo,v=>r.resumo=v);
+      const lab=document.createElement('label');lab.textContent='Texto extraído (editável)';lab.style.marginTop='9px';box.append(lab);
+      const ta=document.createElement('textarea');ta.rows=5;ta.value=r.original;ta.oninput=()=>r.original=ta.value;box.append(ta);
+      lista.append(box);
+    });painel.append(lista);
+    const botoes=document.createElement('div');botoes.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:12px';
+    const confirmar=document.createElement('button');confirmar.className='btn';confirmar.textContent='Confirmar importação dos selecionados';confirmar.onclick=()=>fuConfirmarPdf(arquivo.name,confirmar);
+    const cancelar=document.createElement('button');cancelar.className='btn ghost';cancelar.textContent='Cancelar';cancelar.onclick=()=>{fuPdfRegistros=[];fuPdfContexto='';fuLimparPrevia();};
+    botoes.append(confirmar,cancelar);painel.append(botoes);
+  }catch(e){fuPdfRegistros=[];fuPdfContexto='';fuLimparPrevia();showNotification('Erro ao ler PDF: '+(e.message||e),'error',9000);}
+}
+async function fuConfirmarPdf(nome,botao){
+  const empresaId=document.getElementById('fuEmpresa').value,pedidoId=document.getElementById('fuPedido').value;
+  if(!fuPodeEditar()||fuPdfContexto!==empresaId+'|'+pedidoId){showNotification('Empresa ou pedido alterado. Reimporte o arquivo.','warning');return;}
+  const selecionados=fuPdfRegistros.filter(r=>r.selecionado);
+  if(!selecionados.length){showNotification('Selecione ao menos um bloco.','warning');return;}
+  const registros=[];
+  for(const r of selecionados){
+    if(!r.data||!r.resumo.trim()||!r.original.trim()){showNotification('Preencha data, resumo e texto de todos os blocos selecionados.','warning');return;}
+    const data=new Date(r.data);if(isNaN(data.getTime())){showNotification('Corrija uma data inválida.','warning');return;}
+    registros.push({pedido_id:pedidoId,empresa_id:empresaId,data_atualizacao:data.toISOString(),tipo:r.tipo,assunto:r.assunto.trim()||null,resumo_operacional:r.resumo.trim(),conteudo_original:r.original.trim(),origem:'pdf',arquivo_origem:nome});
+  }
+  botao.disabled=true;
+  try{
+    const existentes=await fuObterHistoricoCompleto(pedidoId);
+    const chave=r=>[r.data_atualizacao,(r.conteudo_original||'').trim()].join('|');
+    const chaves=new Set(existentes.map(chave));const novos=registros.filter(r=>{const k=chave(r);if(chaves.has(k))return false;chaves.add(k);return true;});
+    if(!novos.length){showNotification('Os registros selecionados já constam no histórico.','warning');return;}
+    for(let i=0;i<novos.length;i+=30){const {error}=await sb.from('pedido_followups').insert(novos.slice(i,i+30));if(error)throw error;}
+    showNotification(`${novos.length} atualização(ões) importada(s).`,'success');fuPdfRegistros=[];fuPdfContexto='';fuLimparPrevia();await fuCarregar();
+  }catch(e){showNotification('Erro ao salvar PDF: '+(e.message||e),'error',9000);}finally{botao.disabled=false;}
+}
+
 // ==================== MENSAGEM POR PEDIDO ====================
 function refreshMsgPedidoSelect(){
   const empresaSel = document.getElementById('msgEmpresaSelect');
@@ -1915,6 +2415,7 @@ function renderAll(){
   renderResumo();
   renderPedidosTable();
   refreshMsgPedidoSelect();
+  fuRefreshEmpresas();
   refreshChecklistPedidoSelect();
   updateFilterOptions();
   renderDeadlineAlerts();
