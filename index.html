@@ -14,6 +14,7 @@
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.5.31/dist/jspdf.plugin.autotable.min.js"></script>
 <style>
@@ -759,6 +760,7 @@
             <div class="full"><label for="fuResumo">Atualização / resumo operacional *</label><textarea id="fuResumo" rows="4" placeholder="Descreva a atualização recebida..." required></textarea></div>
             <div class="full"><label for="fuOriginal">Conteúdo original (opcional)</label><textarea id="fuOriginal" rows="3" placeholder="Trecho do e-mail, se desejar guardar..."></textarea></div>
           </div>
+          <div id="fuCompartilharManual" style="margin-top:12px"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;"><button type="button" class="btn" id="fuSalvarBtn" onclick="fuSalvar()">Salvar atualização</button><button type="button" class="btn secondary" onclick="fuCarregar()">↻ Atualizar histórico</button></div>
         </div>
         <div id="fuEditor" class="panel" style="display:none;margin-top:16px;border:2px solid var(--gold)">
@@ -770,6 +772,7 @@
             <div class="full"><label>Resumo operacional</label><textarea id="fuEditResumo" rows="4"></textarea></div>
             <div class="full"><label>Conteúdo original</label><textarea id="fuEditOriginal" rows="4"></textarea></div>
           </div>
+          <div id="fuCompartilharEdicao" style="margin-top:12px"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
             <button type="button" class="btn" id="fuEditSalvarBtn" onclick="fuSalvarEdicao()">Salvar alterações</button>
             <button type="button" class="btn ghost" onclick="fuCancelarEdicao()">Cancelar</button>
@@ -1835,6 +1838,47 @@ function fuEmpresaMudou(preservar=false){
   fuLimparPrevia();
   fuCarregar();
 }
+// V10 TESTE — compartilhamento seletivo de follow-ups na mesma empresa.
+function fuPedidoAtual(){return pedidos.find(p=>p.id===document.getElementById('fuPedido').value);}
+function fuCriarSeletorCompartilhamento(containerId, valorInicial=''){
+  const host=document.getElementById(containerId);if(!host)return null;
+  host.replaceChildren();
+  const pedido=fuPedidoAtual();if(!pedido||!fuPodeEditar())return null;
+  const destinos=pedidos.filter(p=>p.empresa_id===pedido.empresa_id&&p.id!==pedido.id).sort((a,b)=>a.numero.localeCompare(b.numero));
+  if(!destinos.length)return null;
+  const label=document.createElement('label');label.textContent='Compartilhar também com outro pedido (opcional)';
+  const select=document.createElement('select');select.id=containerId+'Select';
+  select.appendChild(new Option('Não compartilhar — somente '+pedido.numero,''));
+  destinos.forEach(p=>select.appendChild(new Option(p.numero,p.id)));
+  select.value=valorInicial;
+  const dica=document.createElement('div');dica.className='company-hint';dica.textContent='Somente atualizações selecionadas serão exibidas no outro pedido. Os anexos não serão duplicados.';
+  host.append(label,select,dica);return select;
+}
+async function fuVincularCompartilhamento(followupId, destinoId){
+  if(!destinoId)return;
+  const {error}=await sb.from('pedido_followup_compartilhamentos').insert({followup_id:followupId,pedido_id:destinoId});
+  if(error)throw error;
+}
+async function fuBuscarCompartilhamentos(pedidoId){
+  const {data,error}=await sb.from('pedido_followup_compartilhamentos').select('id,followup_id,pedido_id').eq('pedido_id',pedidoId);
+  if(error)throw error;return data||[];
+}
+async function fuDesfazerCompartilhamento(vinculoId){
+  if(!fuPodeExcluir())return;
+  if(!confirm('Desfazer o compartilhamento neste pedido? A atualização original e as imagens serão mantidas.'))return;
+  const {data,error}=await sb.from('pedido_followup_compartilhamentos').delete().eq('id',vinculoId).select('id');
+  if(error||!data?.length){showNotification('Não foi possível desfazer o compartilhamento: '+(error?.message||'sem permissão'),'error');return;}
+  showNotification('Compartilhamento desfeito. O original foi preservado.','success');await fuCarregar();
+}
+async function fuAtualizarCompartilhamento(followupId,destinoId){
+  const {data,error}=await sb.from('pedido_followup_compartilhamentos').select('id,pedido_id').eq('followup_id',followupId);
+  if(error)throw error;
+  const atuais=data||[];
+  const remover=atuais.filter(v=>v.pedido_id!==destinoId);
+  if(remover.length&&!fuPodeExcluir())throw new Error('Somente administradores podem remover compartilhamentos existentes.');
+  if(destinoId&&!atuais.some(v=>v.pedido_id===destinoId))await fuVincularCompartilhamento(followupId,destinoId);
+  for(const v of remover){const {error:erro}=await sb.from('pedido_followup_compartilhamentos').delete().eq('id',v.id);if(erro)throw erro;}
+}
 // Planilhas de Follow-up normalmente informam apenas a data, sem hora.
 function fuFormatarDataRegistro(valor, origem){
   const d=new Date(valor);
@@ -1856,6 +1900,7 @@ function fuCancelarEdicao(){fuEditando=null;document.getElementById('fuEditor').
 function fuIniciarEdicao(item){
   if(!fuPodeEditar())return;
   fuEditando={id:item.id,pedido_id:document.getElementById('fuPedido').value};
+  fuCriarSeletorCompartilhamento('fuCompartilharEdicao',item.destino_compartilhado||'');
   const d=new Date(item.data_atualizacao);
   const local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
   document.getElementById('fuEditData').value=local;
@@ -1874,6 +1919,7 @@ async function fuSalvarEdicao(){
   try{
     const {data,error}=await sb.from('pedido_followups').update({data_atualizacao:d.toISOString(),tipo:document.getElementById('fuEditTipo').value,assunto:document.getElementById('fuEditAssunto').value.trim()||null,resumo_operacional:resumo,conteudo_original:document.getElementById('fuEditOriginal').value.trim()||null}).eq('id',fuEditando.id).eq('pedido_id',fuEditando.pedido_id).select('id');
     if(error)throw error;if(!data?.length)throw new Error('Registro não atualizado. Confira suas permissões.');
+    await fuAtualizarCompartilhamento(fuEditando.id,document.getElementById('fuCompartilharEdicaoSelect')?.value||'');
     fuCancelarEdicao();showNotification('Atualização editada com sucesso.','success');await fuCarregar();
   }catch(e){showNotification('Erro ao editar: '+e.message,'error',6000);}finally{btn.disabled=false;}
 }
@@ -1885,6 +1931,7 @@ async function fuExcluir(item){
     fuCancelarEdicao();showNotification('Atualização excluída.','success');await fuCarregar();
   }catch(e){showNotification('Erro ao excluir: '+e.message,'error',6000);}
 }
+let fuAnexosCarregados=[];
 async function fuCarregar(){
   const pedidoId = document.getElementById('fuPedido').value;
   const content = document.getElementById('fuConteudo');
@@ -1892,16 +1939,42 @@ async function fuCarregar(){
   content.style.display = pedidoId ? 'block' : 'none';
   document.getElementById('fuExportacoes').style.display = pedidoId ? 'flex' : 'none';
   fuCancelarEdicao();
-  if(!pedidoId){fuLimparPrevia();return;}
+  if(!pedidoId){fuLimparPrevia();document.getElementById('fuCompartilharManual')?.replaceChildren();return;}
   const seq = ++fuSeq;
   document.getElementById('fuFormulario').style.display = fuPodeEditar() ? 'block' : 'none';
   const historico = document.getElementById('fuHistorico');
   historico.textContent = 'Carregando histórico...';
   if(!sb){historico.textContent = 'Conexão indisponível.';return;}
-  const {data,error} = await sb.from('pedido_followups').select('id,data_atualizacao,tipo,assunto,conteudo_original,resumo_operacional,origem,criado_em').eq('pedido_id',pedidoId).order('data_atualizacao',{ascending:false}).order('criado_em',{ascending:false});
-  if(seq !== fuSeq || document.getElementById('fuPedido').value !== pedidoId) return;
-  if(error){historico.textContent = 'Erro ao carregar histórico: ' + error.message;return;}
-  if(!data?.length){historico.textContent = 'Nenhuma atualização registrada para este pedido.';return;}
+  let data=[];
+  try{
+    const {data:originais,error:erroOriginais}=await sb.from('pedido_followups').select('id,pedido_id,empresa_id,data_atualizacao,tipo,assunto,conteudo_original,resumo_operacional,origem,criado_em').eq('pedido_id',pedidoId).order('data_atualizacao',{ascending:false}).order('criado_em',{ascending:false});
+    if(erroOriginais)throw erroOriginais;
+    const vinculos=await fuBuscarCompartilhamentos(pedidoId);
+    const ids=[...new Set(vinculos.map(v=>v.followup_id))];let compartilhados=[];
+    for(let i=0;i<ids.length;i+=100){
+      const {data:parte,error:erro}=await sb.from('pedido_followups').select('id,pedido_id,empresa_id,data_atualizacao,tipo,assunto,conteudo_original,resumo_operacional,origem,criado_em').in('id',ids.slice(i,i+100));
+      if(erro)throw erro;compartilhados.push(...(parte||[]));
+    }
+    const vinculoPorId=new Map(vinculos.map(v=>[v.followup_id,v.id]));
+    data=[...(originais||[]),...compartilhados.filter(f=>f.empresa_id===fuPedidoAtual()?.empresa_id&&f.pedido_id!==pedidoId).map(f=>({...f,vinculo_id:vinculoPorId.get(f.id)}))];
+    data.sort((a,b)=>new Date(b.data_atualizacao)-new Date(a.data_atualizacao)||new Date(b.criado_em)-new Date(a.criado_em));
+    // Descobrir destinos vinculados aos registros originais para edição.
+    const origIds=(originais||[]).map(f=>f.id);let saidas=[];
+    for(let i=0;i<origIds.length;i+=100){const {data:parte,error:erro}=await sb.from('pedido_followup_compartilhamentos').select('followup_id,pedido_id').in('followup_id',origIds.slice(i,i+100));if(erro)throw erro;saidas.push(...(parte||[]));}
+    const destinoPorId=new Map(saidas.map(v=>[v.followup_id,v.pedido_id]));
+    data.forEach(f=>{if(!f.vinculo_id)f.destino_compartilhado=destinoPorId.get(f.id)||'';});
+  }catch(e){if(seq===fuSeq)historico.textContent='Erro ao carregar histórico: '+e.message;return;}
+  if(seq !== fuSeq || document.getElementById('fuPedido').value !== pedidoId)return;
+  if(!data.length){historico.textContent='Nenhuma atualização registrada para este pedido.';fuCriarSeletorCompartilhamento('fuCompartilharManual');return;}
+  fuCriarSeletorCompartilhamento('fuCompartilharManual');
+  fuAnexosCarregados=[];
+  const idsHistorico=data.map(x=>x.id);
+  for(let i=0;i<idsHistorico.length;i+=100){
+    const {data:anexos,error:erroAnexos}=await sb.from('pedido_followup_anexos').select('id,followup_id,nome_arquivo,caminho_storage').in('followup_id',idsHistorico.slice(i,i+100));
+    if(erroAnexos){showNotification('Não foi possível carregar os anexos: '+erroAnexos.message,'warning');break;}
+    fuAnexosCarregados.push(...(anexos||[]));
+  }
+  if(seq !== fuSeq || document.getElementById('fuPedido').value !== pedidoId)return;
   historico.replaceChildren();
   for(const item of data){
     const card = document.createElement('div');
@@ -1911,13 +1984,26 @@ async function fuCarregar(){
     const dataStr = new Date(item.data_atualizacao);
     titulo.textContent = `${Number.isNaN(dataStr.getTime())?'Data não informada':fuFormatarDataRegistro(item.data_atualizacao,item.origem)} · ${item.tipo === 'recebido'?'Recebido':item.tipo === 'enviado'?'Enviado':'Observação'} · ${item.origem || 'manual'}`;
     card.appendChild(titulo);
+    if(item.vinculo_id){const aviso=document.createElement('div');aviso.style.cssText='font-size:12px;color:var(--river);font-weight:700;margin-bottom:7px';aviso.textContent='🔗 Compartilhado de '+(pedidos.find(p=>p.id===item.pedido_id)?.numero||'outro pedido');card.appendChild(aviso);}
+    else if(item.destino_compartilhado){const aviso=document.createElement('div');aviso.style.cssText='font-size:12px;color:var(--river);font-weight:700;margin-bottom:7px';aviso.textContent='🔗 Compartilhado com '+(pedidos.find(p=>p.id===item.destino_compartilhado)?.numero||'outro pedido');card.appendChild(aviso);}
     if(item.assunto){const assunto=document.createElement('div');assunto.style.fontWeight='600';assunto.textContent=item.assunto;card.appendChild(assunto);}
     const resumo=document.createElement('div');resumo.style.cssText='white-space:pre-wrap;font-size:13px;margin-top:7px';resumo.textContent=item.resumo_operacional || item.conteudo_original || '(Sem conteúdo)';card.appendChild(resumo);
     if(item.conteudo_original && item.resumo_operacional){const details=document.createElement('details');details.style.marginTop='9px';const summary=document.createElement('summary');summary.textContent='Ver conteúdo original';details.appendChild(summary);const original=document.createElement('div');original.style.cssText='white-space:pre-wrap;font-size:12px;margin-top:8px';original.textContent=item.conteudo_original;details.appendChild(original);card.appendChild(details);}
-    if(fuPodeEditar() || fuPodeExcluir()){
+    const anexosDoItem=(fuAnexosCarregados||[]).filter(a=>a.followup_id===item.id);
+    if(anexosDoItem.length){
+      const galeria=document.createElement('div');galeria.style.cssText='display:flex;flex-wrap:wrap;gap:10px;margin-top:12px';
+      for(const anexo of anexosDoItem){
+        const link=document.createElement('button');link.type='button';link.className='btn small secondary';link.textContent='🖼️ '+anexo.nome_arquivo;link.onclick=async()=>{
+          const {data,error}=await sb.storage.from('followup-anexos').createSignedUrl(anexo.caminho_storage,120);
+          if(error||!data?.signedUrl){showNotification('Não foi possível abrir a imagem: '+(error?.message||'sem acesso'),'error');return;}
+          window.open(data.signedUrl,'_blank','noopener,noreferrer');
+        };galeria.appendChild(link);
+      }card.appendChild(galeria);
+    }
+    if((fuPodeEditar()&&!item.vinculo_id) || fuPodeExcluir()){
       const acoes=document.createElement('div');acoes.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:12px';
-      if(fuPodeEditar()){const b=document.createElement('button');b.type='button';b.className='btn small secondary';b.textContent='✏️ Editar';b.onclick=()=>fuIniciarEdicao(item);acoes.appendChild(b);}
-      if(fuPodeExcluir()){const b=document.createElement('button');b.type='button';b.className='btn small danger';b.textContent='🗑️ Excluir';b.onclick=()=>fuExcluir(item);acoes.appendChild(b);}
+      if(fuPodeEditar()&&!item.vinculo_id){const b=document.createElement('button');b.type='button';b.className='btn small secondary';b.textContent='✏️ Editar';b.onclick=()=>fuIniciarEdicao(item);acoes.appendChild(b);}
+      if(fuPodeExcluir()){const b=document.createElement('button');b.type='button';b.className='btn small danger';b.textContent=item.vinculo_id?'🔗 Desfazer vínculo':'🗑️ Excluir';b.onclick=()=>item.vinculo_id?fuDesfazerCompartilhamento(item.vinculo_id):fuExcluir(item);acoes.appendChild(b);}
       card.appendChild(acoes);
     }
     historico.appendChild(card);
@@ -1935,8 +2021,10 @@ async function fuSalvar(){
   if(Number.isNaN(dt.getTime())){showNotification('Data inválida.','warning');return;}
   const btn=document.getElementById('fuSalvarBtn');btn.disabled=true;
   try{
-    const {error}=await sb.from('pedido_followups').insert({pedido_id:pedidoId,empresa_id:empresaId,data_atualizacao:dt.toISOString(),tipo:document.getElementById('fuTipo').value,assunto:document.getElementById('fuAssunto').value.trim()||null,resumo_operacional:resumo,conteudo_original:document.getElementById('fuOriginal').value.trim()||null,origem:'manual'});
+    const {data:novo,error}=await sb.from('pedido_followups').insert({pedido_id:pedidoId,empresa_id:empresaId,data_atualizacao:dt.toISOString(),tipo:document.getElementById('fuTipo').value,assunto:document.getElementById('fuAssunto').value.trim()||null,resumo_operacional:resumo,conteudo_original:document.getElementById('fuOriginal').value.trim()||null,origem:'manual'}).select('id').single();
     if(error) throw error;
+    const destino=document.getElementById('fuCompartilharManualSelect')?.value||'';
+    if(destino){try{await fuVincularCompartilhamento(novo.id,destino);}catch(e){showNotification('Atualização salva, mas o compartilhamento falhou: '+e.message,'warning',8000);}}
     document.getElementById('fuResumo').value='';document.getElementById('fuOriginal').value='';document.getElementById('fuAssunto').value='';
     showNotification('Follow-up salvo com sucesso.','success');await fuCarregar();
   }catch(e){showNotification('Erro ao salvar follow-up: '+(e.message||e),'error',6000);}finally{btn.disabled=false;}
@@ -2028,10 +2116,13 @@ async function fuExportar(formato){
 }
 
 // Importação de Excel: leitura local, revisão obrigatória e confirmação explícita.
+let fuImagensExcel = [];
+let fuExcelOcupado = false;
 let fuImportacao = [];
 let fuImportacaoContexto = '';
 function fuLimparPrevia(){
-  fuImportacao=[];fuImportacaoContexto='';
+  if(fuExcelOcupado)return;
+  fuImportacao=[];fuImportacaoContexto='';fuImagensExcel=[];
   const el=document.getElementById('fuPreviaImportacao');
   if(el){el.style.display='none';el.replaceChildren();}
   const arquivo=document.getElementById('fuArquivoExcel');if(arquivo)arquivo.value='';const pdf=document.getElementById('fuArquivoPdf');if(pdf)pdf.value='';
@@ -2046,6 +2137,71 @@ function fuDataExcel(valor){
   const br=texto.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if(br) return new Date(+br[3],+br[2]-1,+br[1],+(br[4]||0),+(br[5]||0),+(br[6]||0));
   const iso=new Date(texto);return iso;
+}
+// Versão 9 (prévia): extrai imagens ancoradas na aba, sem enviar arquivos ao servidor.
+async function fuExtrairImagensExcel(bytes, abaNome, indiceCabecalho, linhasExcel){
+  if(!window.JSZip)throw new Error('Biblioteca de imagens Excel indisponível.');
+  const zip=await JSZip.loadAsync(bytes);
+  const parser=new DOMParser();
+  const xml=async path=>{const f=zip.file(path);return f?parser.parseFromString(await f.async('string'),'application/xml'):null;};
+  const filhos=(node,nome)=>[...node?.getElementsByTagName('*')||[]].filter(e=>e.localName===nome);
+  const attrs=(node,nome)=>[...node?.attributes||[]].find(a=>a.localName===nome)?.value||'';
+  const workbook=await xml('xl/workbook.xml');const rels=await xml('xl/_rels/workbook.xml.rels');
+  const sheet=filhos(workbook,'sheet').find(e=>e.getAttribute('name')===abaNome);
+  const rel=filhos(rels,'Relationship').find(e=>e.getAttribute('Id')===attrs(sheet,'id'));
+  if(!rel)return [];
+  const resolver=(base,target)=>{const partes=base.split('/');partes.pop();for(const x of target.split('/')){if(x==='..')partes.pop();else if(x&&x!=='.')partes.push(x);}return partes.join('/');};
+  const sheetPath=rel.getAttribute('Target').startsWith('/')?rel.getAttribute('Target').slice(1):resolver('xl/workbook.xml',rel.getAttribute('Target'));
+  const sheetXml=await xml(sheetPath);
+  const sheetRelsPath=sheetPath.replace(/([^/]+)$/,'_rels/$1.rels');
+  const sheetRels=await xml(sheetRelsPath);
+  const drawings=filhos(sheetXml,'drawing');const saida=[];
+  for(const drawing of drawings){
+    const drRel=filhos(sheetRels,'Relationship').find(e=>e.getAttribute('Id')===attrs(drawing,'id'));
+    if(!drRel)continue;
+    const drawingPath=resolver(sheetPath,drRel.getAttribute('Target'));
+    const drawingXml=await xml(drawingPath);
+    const drawingRels=await xml(drawingPath.replace(/([^/]+)$/,'_rels/$1.rels'));
+    const anchors=[...drawingXml?.documentElement?.children||[]].filter(e=>/Anchor$/.test(e.localName));
+    for(const anchor of anchors){
+      const pic=filhos(anchor,'pic')[0],from=filhos(anchor,'from')[0];if(!pic||!from)continue;
+      const blip=filhos(pic,'blip')[0];const id=attrs(blip,'embed');
+      const mediaRel=filhos(drawingRels,'Relationship').find(e=>e.getAttribute('Id')===id);
+      if(!mediaRel)continue;
+      const mediaPath=resolver(drawingPath,mediaRel.getAttribute('Target'));
+      const file=zip.file(mediaPath);if(!file)continue;
+      const row=Number(filhos(from,'row')[0]?.textContent||0);
+      const col=Number(filhos(from,'col')[0]?.textContent||0);
+      if(row<=indiceCabecalho)continue;
+      const extensao=mediaPath.split('.').pop().toLowerCase();
+      const tipo=extensao==='png'?'image/png':extensao==='jpg'||extensao==='jpeg'?'image/jpeg':extensao==='webp'?'image/webp':null;
+      if(!tipo)continue;
+      const bytesImg=await file.async('uint8array');if(bytesImg.byteLength>10*1024*1024)continue;
+      const dataRow=linhasExcel[row];
+      saida.push({row,col,nome:mediaPath.split('/').pop(),tipo,blob:new Blob([bytesImg],{type:tipo}),dataLinha:String(dataRow?.[0]??'')});
+    }
+  }
+  return saida;
+}
+function fuMostrarImagensExcel(painel){
+  if(!fuImagensExcel.length)return;
+  const sec=document.createElement('section');sec.style.cssText='margin-top:14px;border-top:1px solid var(--line);padding-top:12px';
+  const h=document.createElement('h4');h.textContent=`🖼️ ${fuImagensExcel.length} imagem(ns) — confira a associação`;sec.appendChild(h);
+  const nota=document.createElement('p');nota.style.fontSize='12px';nota.textContent='Cada imagem será vinculada à atualização escolhida. Confira especialmente imagens que estão sobre a mesma linha. Escolha “Não importar” para ignorar alguma imagem.';sec.appendChild(nota);
+  const grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px';
+  for(const img of fuImagensExcel){
+    const card=document.createElement('div');card.style.cssText='background:white;border:1px solid var(--line);padding:8px';
+    const el=document.createElement('img');const url=URL.createObjectURL(img.blob);el.src=url;el.alt=img.nome;el.style.cssText='max-width:100%;height:125px;object-fit:contain;display:block;margin:auto';el.onload=()=>URL.revokeObjectURL(url);
+    const txt=document.createElement('div');txt.style.cssText='font-size:11px;overflow-wrap:anywhere';txt.textContent=`${img.nome} · linha ${img.row+1} · coluna ${img.col+1}`;
+    const label=document.createElement('label');label.textContent='Vincular à atualização:';label.style.cssText='margin-top:8px;font-size:11px';
+    const select=document.createElement('select');select.style.cssText='font-size:11px;padding:7px';
+    const off=document.createElement('option');off.value='';off.textContent='Não importar esta imagem';select.appendChild(off);
+    fuImportacao.forEach((r,i)=>{const op=document.createElement('option');op.value=String(i);op.textContent=`${fuFormatarDataRegistro(r.data_atualizacao,'excel')} — ${(r.assunto||r.resumo_operacional).slice(0,75)}${r.duplicado?' [já existe]':''}`;select.appendChild(op);});
+    const idx=fuImportacao.findIndex(r=>r.linhaExcel===img.row);
+    if(idx>=0)select.value=String(idx);
+    img.seletor=select;
+    card.append(el,txt,label,select);grid.appendChild(card);
+  }sec.appendChild(grid);painel.appendChild(sec);
 }
 async function fuLerExcel(event){
   const arquivo=event.target.files?.[0];
@@ -2071,6 +2227,7 @@ async function fuLerExcel(event){
     const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/\s+/g,' ');
     const indiceCabecalho=matriz.findIndex(l=>l.some(c=>['data','data e hora','data atualizacao'].includes(norm(c))) && l.some(c=>['atualizacao do follow-up','resumo operacional','atualizacao','descricao'].includes(norm(c))));
     if(indiceCabecalho<0)throw new Error('Cabeçalho de atualizações não encontrado.');
+    try{fuImagensExcel=await fuExtrairImagensExcel(bytes,aba,indiceCabecalho,matriz);}catch(err){console.warn('Imagens não extraídas:',err);showNotification('Não foi possível ler as imagens deste Excel. A importação de texto permanece disponível.','warning');}
     const cabecalhos=matriz[indiceCabecalho].map(norm);
     const obter=(linha,...nomes)=>{const i=cabecalhos.findIndex(k=>nomes.includes(k));return i<0?'':linha[i];};
     const importados=[];let invalidos=0;
@@ -2086,7 +2243,7 @@ async function fuLerExcel(event){
       const original=[previsao&&'Próxima previsão: '+previsao,pendencia&&'Observação / pendência: '+pendencia].filter(Boolean).join('\n');
       const tipoTexto=norm(obter(linha,'tipo'));
       const tipo=tipoTexto.includes('recebid')?'recebido':tipoTexto.includes('enviad')?'enviado':'observacao';
-      importados.push({pedido_id:pedidoId,empresa_id:empresaId,data_atualizacao:data.toISOString(),tipo,
+      importados.push({linhaExcel:matriz.indexOf(linha),pedido_id:pedidoId,empresa_id:empresaId,data_atualizacao:data.toISOString(),tipo,
         assunto:etapa||null,remetente:null,destinatario:null,resumo_operacional:resumo,
         conteudo_original:original||null,origem:'excel',arquivo_origem:arquivo.name});
     }
@@ -2104,29 +2261,75 @@ async function fuLerExcel(event){
       const label=document.createElement('label');label.style.cssText='display:flex;align-items:flex-start;gap:9px;padding:9px;border-bottom:1px solid var(--line);text-transform:none;letter-spacing:normal';
       const ck=document.createElement('input');ck.type='checkbox';ck.className='fuImportarCheck';ck.dataset.idx=i;ck.checked=!r.duplicado;ck.disabled=r.duplicado;ck.style.width='auto';
       const span=document.createElement('span');span.style.cssText='font-size:12px;overflow-wrap:anywhere';span.textContent=`${fuFormatarDataRegistro(r.data_atualizacao,r.origem)} — ${r.assunto||'(sem assunto)'} — ${r.resumo_operacional.slice(0,240)}${r.duplicado?' [POSSÍVEL DUPLICATA — não selecionável]':''}`;
-      label.append(ck,span);lista.appendChild(label);
+      label.append(ck,span);
+      const pedido=fuPedidoAtual();const destinos=pedidos.filter(p=>p.empresa_id===pedido?.empresa_id&&p.id!==pedido.id);
+      if(destinos.length){const sel=document.createElement('select');sel.className='fuCompartilharExcel';sel.dataset.idx=i;sel.style.cssText='max-width:190px;margin-left:auto';sel.appendChild(new Option('Somente este pedido',''));destinos.forEach(p=>sel.appendChild(new Option('Compartilhar: '+p.numero,p.id)));label.appendChild(sel);}
+      lista.appendChild(label);
     });painel.appendChild(lista);
+    fuMostrarImagensExcel(painel);
     const botoes=document.createElement('div');botoes.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:12px';
-    const confirmar=document.createElement('button');confirmar.className='btn';confirmar.textContent='Confirmar importação dos selecionados';confirmar.onclick=fuConfirmarExcel;
+    const confirmar=document.createElement('button');confirmar.className='btn';confirmar.textContent='Confirmar textos e imagens selecionados';confirmar.onclick=fuConfirmarExcel;
     const cancelar=document.createElement('button');cancelar.className='btn ghost';cancelar.textContent='Cancelar';cancelar.onclick=fuLimparPrevia;
     botoes.append(confirmar,cancelar);painel.appendChild(botoes);
   }catch(e){fuLimparPrevia();showNotification('Erro ao ler Excel: '+(e.message||e),'error',7000);}
 }
 async function fuConfirmarExcel(){
+  if(fuExcelOcupado)return;
   if(!fuPodeEditar()||fuImportacaoContexto!==document.getElementById('fuEmpresa').value+'|'+document.getElementById('fuPedido').value){showNotification('Empresa ou pedido alterado. Importe novamente.','warning');fuLimparPrevia();return;}
-  const selecionados=[...document.querySelectorAll('.fuImportarCheck:checked')].map(e=>fuImportacao[Number(e.dataset.idx)]).filter(r=>r&&!r.duplicado).map(({duplicado,...r})=>r);
-  if(!selecionados.length){showNotification('Nenhuma atualização selecionada.','warning');return;}
-  const botao=document.querySelector('#fuPreviaImportacao button');botao.disabled=true;
+  const empresaId=document.getElementById('fuEmpresa').value;
+  const pedidoId=document.getElementById('fuPedido').value;
+  const selecionados=[...document.querySelectorAll('.fuImportarCheck:checked')].map(e=>Number(e.dataset.idx)).filter(i=>fuImportacao[i]&&!fuImportacao[i].duplicado);
+  const imagens=fuImagensExcel.filter(img=>img.seletor?.value!=='');
+  if(!selecionados.length&&!imagens.length){showNotification('Nenhuma atualização ou imagem selecionada.','warning');return;}
+  const btns=[...document.querySelectorAll('#fuPreviaImportacao button,#fuPreviaImportacao select,#fuPreviaImportacao input')];
+  fuExcelOcupado=true;btns.forEach(b=>b.disabled=true);
+  let criados=0,anexados=0;
   try{
-    // Segunda checagem contra duplicações antes da gravação.
-    const existentes=await fuObterHistoricoCompleto(document.getElementById('fuPedido').value);
-    const chave=fuChaveImportacaoExcel;
-    const chaves=new Set(existentes.map(chave));const novos=selecionados.filter(r=>!chaves.has(chave(r)));
-    if(!novos.length){showNotification('Todos os registros selecionados já existem.','warning');fuLimparPrevia();return;}
-    // Lotes pequenos para evitar requisições grandes.
-    for(let i=0;i<novos.length;i+=50){const {error}=await sb.from('pedido_followups').insert(novos.slice(i,i+50));if(error)throw error;}
-    showNotification(`${novos.length} atualização(ões) importada(s) com sucesso.`,'success');fuLimparPrevia();await fuCarregar();
-  }catch(e){showNotification('Erro na importação (verifique o histórico antes de repetir): '+(e.message||e),'error',8000);botao.disabled=false;}
+    const existentes=await fuObterHistoricoCompleto(pedidoId);
+    const chaves=new Set(existentes.map(fuChaveImportacaoExcel));
+    const novos=selecionados.filter(i=>!chaves.has(fuChaveImportacaoExcel(fuImportacao[i])));
+    const ids=new Map();
+    // Registros existentes são procurados pela mesma chave, evitando duplicar textos.
+    const registrosIds=[];
+    for(let inicio=0;;inicio+=500){
+      const {data,error}=await sb.from('pedido_followups').select('id,data_atualizacao,tipo,assunto,resumo_operacional,origem').eq('pedido_id',pedidoId).order('id').range(inicio,inicio+499);
+      if(error)throw error;registrosIds.push(...(data||[]));if(!data||data.length<500)break;
+    }
+    const mapaExistentes=new Map(registrosIds.map(r=>[fuChaveImportacaoExcel(r),r.id]));
+    fuImportacao.forEach((r,i)=>{const id=mapaExistentes.get(fuChaveImportacaoExcel(r));if(id)ids.set(i,id);});
+    for(const i of novos){
+      const {linhaExcel,duplicado,...registro}=fuImportacao[i];
+      const {data,error}=await sb.from('pedido_followups').insert(registro).select('id').single();
+      if(error)throw error;ids.set(i,data.id);criados++;
+    }
+    let compartilhados=0;
+    for(const i of selecionados){
+      const destino=document.querySelector(`.fuCompartilharExcel[data-idx="${i}"]`)?.value||'';
+      if(destino&&ids.get(i)){
+        const {data:existe,error:erro}=await sb.from('pedido_followup_compartilhamentos').select('id').eq('followup_id',ids.get(i)).eq('pedido_id',destino).limit(1);
+        if(erro)throw erro;
+        if(!existe?.length){await fuVincularCompartilhamento(ids.get(i),destino);compartilhados++;}
+      }
+    }
+    for(const img of imagens){
+      const idx=Number(img.seletor.value);const followupId=ids.get(idx);
+      if(!followupId)throw new Error('A atualização associada à imagem não foi localizada.');
+      const ext=img.tipo==='image/png'?'png':img.tipo==='image/jpeg'?'jpg':'webp';
+      const caminho=`${followupId}/${crypto.randomUUID()}.${ext}`;
+      const {error:uploadError}=await sb.storage.from('followup-anexos').upload(caminho,img.blob,{contentType:img.tipo,upsert:false});
+      if(uploadError)throw uploadError;
+      const {error:dbError}=await sb.from('pedido_followup_anexos').insert({followup_id:followupId,nome_arquivo:img.nome,caminho_storage:caminho,tipo_arquivo:img.tipo});
+      if(dbError){
+        const {error:cleanupError}=await sb.storage.from('followup-anexos').remove([caminho]);
+        if(cleanupError)console.warn('Arquivo órfão requer limpeza administrativa:',caminho,cleanupError);
+        throw dbError;
+      }
+      anexados++;
+    }
+    showNotification(`${criados} atualização(ões) criada(s); ${anexados} imagem(ns) vinculada(s); ${compartilhados} compartilhamento(s).`,'success',6500);
+    fuExcelOcupado=false;fuLimparPrevia();await fuCarregar();
+  }catch(e){showNotification(`Importação interrompida: ${criados} texto(s) e ${anexados} imagem(ns) já salvos. Confira o histórico antes de repetir. ${e.message||e}`,'error',11000);}
+  finally{fuExcelOcupado=false;btns.forEach(b=>b.disabled=false);}
 }
 
 // Importação de PDF: texto local, revisão editável e gravação explícita.
